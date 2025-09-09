@@ -1,9 +1,8 @@
 import React from 'react';
-import { X, Globe, Users, FolderKanban, Wallet, UserCog, Archive } from 'lucide-react';
+import { X, Globe, Users, FolderKanban, Wallet, Archive } from 'lucide-react';
 import CategoryManagementView from './CategoryManagementView';
 import TiersManagementView from './TiersManagementView';
 import CashAccountsView from './CashAccountsView';
-import UserManagementView from './UserManagementView';
 import CurrencySettingsView from './CurrencySettingsView';
 import ArchiveManagementView from './ArchiveManagementView';
 import { useBudget } from '../context/BudgetContext';
@@ -15,7 +14,6 @@ const SettingsDrawerWrapper = ({ activeDrawer, onClose }) => {
   if (!activeDrawer) return null;
 
   const drawerConfig = {
-    userManagement: { title: 'Gérer les Utilisateurs', icon: UserCog, color: 'text-cyan-500', component: <UserManagementView /> },
     categoryManagement: { title: 'Gérer les Catégories', icon: FolderKanban, color: 'text-orange-500', component: <CategoryManagementView /> },
     tiersManagement: { title: 'Gérer les Tiers', icon: Users, color: 'text-pink-500', component: <TiersManagementView /> },
     cashAccounts: { title: 'Gérer les Comptes', icon: Wallet, color: 'text-teal-500', component: <CashAccountsView /> },

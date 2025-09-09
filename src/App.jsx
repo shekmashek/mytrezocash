@@ -11,11 +11,10 @@ import JournalsView from './components/JournalsView';
 import BudgetModal from './components/BudgetModal';
 import DashboardView from './components/DashboardView';
 import InfoModal from './components/InfoModal';
-import AuthView from './components/AuthView';
 
 function App() {
   const { state, dispatch } = useBudget();
-  const { activeProjectId, currentView, activeSettingsDrawer, isBudgetModalOpen, editingEntry, infoModal, isAuthenticated } = state;
+  const { activeProjectId, currentView, activeSettingsDrawer, isBudgetModalOpen, editingEntry, infoModal } = state;
 
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
@@ -71,10 +70,6 @@ function App() {
         return <div>Vue non trouvée</div>;
     }
   };
-
-  if (!isAuthenticated) {
-    return <AuthView />;
-  }
 
   return (
     <div className="flex min-h-screen bg-gray-100">

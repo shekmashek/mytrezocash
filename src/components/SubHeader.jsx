@@ -6,21 +6,9 @@ import { formatCurrency } from '../utils/formatting';
 import ActionableBalanceDrawer from './ActionableBalanceDrawer';
 import { mainCashAccountCategories } from '../context/BudgetContext';
 
-const Avatar = ({ name }) => {
-  const initials = name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
-  return (
-    <div
-      className="w-8 h-8 rounded-full bg-gray-200 text-gray-600 flex items-center justify-center text-xs font-bold border-2 border-white"
-      title={name}
-    >
-      {initials}
-    </div>
-  );
-};
-
 const SubHeader = () => {
   const { state, dispatch } = useBudget();
-  const { activeProjectId, users, permissions, displayYear, settings, allActuals, userCashAccounts } = state;
+  const { activeProjectId, displayYear, settings, allActuals, userCashAccounts } = state;
 
   const [isBalanceDrawerOpen, setIsBalanceDrawerOpen] = useState(false);
   const [selectedGroupId, setSelectedGroupId] = useState(null);
@@ -79,11 +67,6 @@ const SubHeader = () => {
 
     return Object.values(grouped).filter(g => g.balance > 0 || userCashAccounts.some(acc => acc.mainCategoryId === g.id));
   }, [accountBalances, userCashAccounts]);
-
-  const collaborators = useMemo(() => {
-    if (isConsolidated || !activeProjectId) return [];
-    return users.filter(user => permissions[user.id]?.[activeProjectId] && permissions[user.id][activeProjectId] !== 'none');
-  }, [activeProjectId, users, permissions, isConsolidated]);
   
   const handleYearChange = (newYear) => {
     dispatch({ type: 'SET_DISPLAY_YEAR', payload: newYear });
@@ -154,13 +137,6 @@ const SubHeader = () => {
                     )
                 })}
             </div>
-            {!isConsolidated && (
-              <div className="flex items-center -space-x-2">
-                {collaborators.map(user => (
-                  <Avatar key={user.id} name={user.name} />
-                ))}
-              </div>
-            )}
           </div>
         </div>
       </div>

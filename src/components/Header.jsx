@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { User, BarChart3, ArrowDownUp, HandCoins, LayoutDashboard, Cog, Globe, Users, FolderKanban, Wallet, Layers, PieChart, BookOpen, Table, UserCog, Archive, LogOut, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { BarChart3, ArrowDownUp, HandCoins, LayoutDashboard, Cog, Globe, Users, FolderKanban, Wallet, Layers, PieChart, BookOpen, Table, Archive, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { useBudget } from '../context/BudgetContext';
 
 const NavLink = ({ item, isCollapsed, isActive, onClick }) => {
@@ -41,20 +41,17 @@ const SettingsLink = ({ item, isCollapsed, onClick }) => {
 };
 
 const Header = ({ isCollapsed, onToggleCollapse, onOpenSettingsDrawer }) => {
-  const { state, dispatch, logout } = useBudget();
+  const { state, dispatch } = useBudget();
   const { currentView, activeProjectId, settings } = state;
 
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const settingsRef = useRef(null);
-  const userMenuRef = useRef(null);
 
   const isConsolidated = activeProjectId === 'consolidated';
 
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (settingsRef.current && !settingsRef.current.contains(event.target)) setIsSettingsOpen(false);
-      if (userMenuRef.current && !userMenuRef.current.contains(event.target)) setIsUserMenuOpen(false);
     };
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
@@ -71,7 +68,6 @@ const Header = ({ isCollapsed, onToggleCollapse, onOpenSettingsDrawer }) => {
   ];
 
   const settingsItems = [
-    { id: 'userManagement', label: 'Utilisateurs', icon: UserCog, color: 'text-cyan-500', disabled: false },
     { id: 'categoryManagement', label: 'Catégories', icon: FolderKanban, color: 'text-orange-500', disabled: false },
     { id: 'tiersManagement', label: 'Tiers', icon: Users, color: 'text-pink-500', disabled: false },
     { id: 'cashAccounts', label: 'Comptes', icon: Wallet, color: 'text-teal-500', disabled: false },
@@ -191,29 +187,6 @@ const Header = ({ isCollapsed, onToggleCollapse, onOpenSettingsDrawer }) => {
                     onClick={() => handleSettingsItemClick(item.id)} 
                   />
                 ))}
-              </ul>
-            </div>
-          )}
-        </div>
-
-        <div ref={userMenuRef} className={`${isCollapsed ? 'relative' : ''}`}>
-          <button title={isCollapsed ? 'Mon Compte' : ''} onClick={() => setIsUserMenuOpen(!isUserMenuOpen)} className={`flex items-center w-full h-12 px-4 rounded-lg text-sm font-semibold transition-colors text-gray-600 hover:bg-gray-100 hover:text-gray-900`}>
-            <div className="w-7 h-7 bg-gray-200 rounded-full flex items-center justify-center text-gray-600 shrink-0">
-              <User className="w-4 h-4" />
-            </div>
-            <span className={`ml-2 transition-opacity duration-200 ${isCollapsed ? 'opacity-0' : 'opacity-100'}`}>
-              Mon Compte
-            </span>
-          </button>
-          {isUserMenuOpen && (
-            <div className={`bg-white border rounded-lg shadow-xl z-10 ${isCollapsed ? 'absolute bottom-0 left-full ml-2 w-48' : 'relative bottom-full mb-2 w-full'}`}>
-              <ul className="py-2">
-                <li>
-                  <button onClick={logout} className="w-full text-left flex items-center gap-3 px-4 py-2 text-gray-700 hover:bg-gray-100">
-                    <LogOut className="w-4 h-4 text-red-500" />
-                    <span className="font-medium">Déconnexion</span>
-                  </button>
-                </li>
               </ul>
             </div>
           )}

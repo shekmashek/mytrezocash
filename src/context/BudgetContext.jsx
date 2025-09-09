@@ -90,28 +90,11 @@ const initialSettings = {
 const initialScenarios = [];
 const initialScenarioEntries = {};
 
-const initialUsers = [
-  { id: 'user-1', name: 'Vous (Propriétaire)', email: 'owner@example.com', isOwner: true },
-];
-
-const initialPermissions = {
-  'user-1': {
-    'proj-1': 'admin',
-    'proj-2': 'admin',
-  }
-};
-
 const CONSOLIDATED_PROJECT_ID = 'consolidated';
-// Changez ce mot de passe par défaut.
-const CORRECT_PASSWORD = 'trezocash';
 
 // --- Reducer Function ---
 const budgetReducer = (state, action) => {
   switch (action.type) {
-    case 'LOGIN_SUCCESS':
-      return { ...state, isAuthenticated: true };
-    case 'LOGOUT':
-      return { ...state, isAuthenticated: false };
     case 'SET_CURRENT_VIEW':
       return { ...state, currentView: action.payload };
     case 'SET_ACTIVE_PROJECT': {
@@ -142,45 +125,6 @@ const budgetReducer = (state, action) => {
       return { ...state, infoModal: { isOpen: true, ...action.payload } };
     case 'CLOSE_INFO_MODAL':
       return { ...state, infoModal: { isOpen: false, title: '', message: '' } };
-
-    // --- User Management ---
-    case 'ADD_USER': {
-      const { email } = action.payload;
-      if (state.users.some(u => u.email === email)) {
-        alert("Cet utilisateur existe déjà.");
-        return state;
-      }
-      const newUser = { id: uuidv4(), name: email, email, isOwner: false };
-      const newPermissions = { ...state.permissions, [newUser.id]: {} };
-      state.projects.forEach(p => {
-        newPermissions[newUser.id][p.id] = 'none';
-      });
-      return { ...state, users: [...state.users, newUser], permissions: newPermissions };
-    }
-    case 'DELETE_USER': {
-      const userId = action.payload;
-      const userToDelete = state.users.find(u => u.id === userId);
-      if (userToDelete.isOwner) {
-        alert("Vous ne pouvez pas supprimer le propriétaire.");
-        return state;
-      }
-      if (window.confirm(`Êtes-vous sûr de vouloir supprimer l'utilisateur ${userToDelete.email} ?`)) {
-        const newUsers = state.users.filter(u => u.id !== userId);
-        const newPermissions = { ...state.permissions };
-        delete newPermissions[userId];
-        return { ...state, users: newUsers, permissions: newPermissions };
-      }
-      return state;
-    }
-    case 'UPDATE_USER_PERMISSIONS': {
-      const { userId, projectId, role } = action.payload;
-      const newPermissions = JSON.parse(JSON.stringify(state.permissions));
-      if (!newPermissions[userId]) {
-        newPermissions[userId] = {};
-      }
-      newPermissions[userId][projectId] = role;
-      return { ...state, permissions: newPermissions };
-    }
 
     // --- Scenarios ---
     case 'ADD_SCENARIO': {
@@ -767,8 +711,6 @@ const loadInitialState = () => {
               }));
             }
             if (!parsedState.scenarioEntries) parsedState.scenarioEntries = initialScenarioEntries;
-            if (!parsedState.users) parsedState.users = initialUsers;
-            if (!parsedState.permissions) parsedState.permissions = initialPermissions;
             if (!parsedState.infoModal) parsedState.infoModal = { isOpen: false, title: '', message: '' };
 
             if (parsedState.categories && parsedState.categories.expense) {
@@ -823,8 +765,10 @@ const loadInitialState = () => {
                 parsedState.displayYear = new Date().getFullYear();
             }
 
-            // Authentication state should not be persisted
-            parsedState.isAuthenticated = false;
+            // Remove user-related state on load
+            delete parsedState.users;
+            delete parsedState.permissions;
+            delete parsedState.isAuthenticated;
 
             return parsedState;
         }
@@ -842,8 +786,6 @@ const loadInitialState = () => {
         settings: initialSettings,
         scenarios: initialScenarios,
         scenarioEntries: initialScenarioEntries,
-        users: initialUsers,
-        permissions: initialPermissions,
         infoModal: { isOpen: false, title: '', message: '' },
         activeProjectId: initialProjects[0]?.id,
         currentView: 'dashboard',
@@ -851,7 +793,6 @@ const loadInitialState = () => {
         activeSettingsDrawer: null,
         isBudgetModalOpen: false,
         editingEntry: null,
-        isAuthenticated: false, // Default to not authenticated
     };
 };
 
@@ -860,28 +801,16 @@ export const BudgetProvider = ({ children }) => {
 
   useEffect(() => {
     try {
-        // Don't save authentication status in localStorage
-        const stateToSave = { ...state, isAuthenticated: false };
+        const stateToSave = { ...state };
+        delete stateToSave.isAuthenticated; // Ensure auth state is never saved
         localStorage.setItem('budgetAppState', JSON.stringify(stateToSave));
     } catch (e) {
         console.error("Failed to save state to localStorage", e);
     }
   }, [state]);
 
-  const login = (password) => {
-    if (password === CORRECT_PASSWORD) {
-      dispatch({ type: 'LOGIN_SUCCESS' });
-      return true;
-    }
-    return false;
-  };
-
-  const logout = () => {
-    dispatch({ type: 'LOGOUT' });
-  };
-
   return (
-    <BudgetContext.Provider value={{ state, dispatch, login, logout }}>
+    <BudgetContext.Provider value={{ state, dispatch }}>
       {children}
     </BudgetContext.Provider>
   );

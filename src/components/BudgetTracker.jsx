@@ -1,27 +1,34 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { Plus, Edit, Eye, Search, Gem, Info, Table } from 'lucide-react';
+import { Plus, Edit, Eye, Search, Gem, Info, Table, LogIn, Flag, ChevronDown, User, Folder, TrendingUp, TrendingDown, Target, AreaChart, Layers } from 'lucide-react';
+import ReactECharts from 'echarts-for-react';
 import TransactionDetailDrawer from './TransactionDetailDrawer';
+import CashflowDetailDrawer from './CashflowDetailDrawer';
 import ResizableTh from './ResizableTh';
 import { getEntryAmountForMonth } from '../utils/budgetCalculations';
 import { formatCurrency } from '../utils/formatting';
 import { useBudget } from '../context/BudgetContext';
-import { Building, Calendar, ChevronDown, User, Folder, TrendingUp, Target } from 'lucide-react';
 import AnnualGoalsTracker from './AnnualGoalsTracker';
+import { generateScenarioActuals } from '../utils/scenarioCalculations';
+const getStartOfWeek = (date) => { const d = new Date(date); const day = d.getDay(); const diff = d.getDate() - day + (day === 0 ? -6 : 1); d.setHours(0, 0, 0, 0); return new Date(d.setDate(diff)); };
 
 const BudgetTracker = ({ activeProject, budgetEntries, actualTransactions }) => {
   const { state, dispatch } = useBudget();
-  const { projects, categories, settings, displayYear, userCashAccounts } = state;
-
+  const { projects, categories, settings, displayYear, userCashAccounts, scenarios, allEntries, allActuals, scenarioEntries, activeProjectId } = state;
   const [searchTerm, setSearchTerm] = useState('');
-  const [visibleColumns, setVisibleColumns] = useState({ budget: true, actual: true, ecart: true });
+  const [visibleColumns, setVisibleColumns] = useState({
+    budget: true,
+    actual: true,
+    ecart: true,
+    netResultRow: false,
+    cumulativeNetResultRow: false,
+  });
   const [drawerData, setDrawerData] = useState({ isOpen: false, transactions: [], title: '' });
   const [collapsedItems, setCollapsedItems] = useState({});
-
+  const [isEntreesCollapsed, setIsEntreesCollapsed] = useState(false);
+  const [isSortiesCollapsed, setIsSortiesCollapsed] = useState(false);
   const topScrollRef = useRef(null);
   const mainScrollRef = useRef(null);
-
   const toggleCollapse = (id) => setCollapsedItems(prev => ({ ...prev, [id]: !prev[id] }));
-  
   const [columnWidths, setColumnWidths] = useState(() => {
     try {
       const savedWidths = localStorage.getItem('budgetAppColumnWidths');
@@ -31,9 +38,7 @@ const BudgetTracker = ({ activeProject, budgetEntries, actualTransactions }) => 
     }
     return { category: 192, supplier: 160, project: 192, description: 256 };
   });
-
   useEffect(() => localStorage.setItem('budgetAppColumnWidths', JSON.stringify(columnWidths)), [columnWidths]);
-
   useEffect(() => {
     const topEl = topScrollRef.current;
     const mainEl = mainScrollRef.current;
@@ -45,20 +50,15 @@ const BudgetTracker = ({ activeProject, budgetEntries, actualTransactions }) => 
     mainEl.addEventListener('scroll', syncMainToTop);
     return () => { topEl.removeEventListener('scroll', syncTopToMain); mainEl.removeEventListener('scroll', syncMainToTop); };
   }, []);
-
   const handleResize = (columnId, newWidth) => setColumnWidths(prev => ({ ...prev, [columnId]: Math.max(newWidth, 80) }));
-
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   const isConsolidated = activeProject.id === 'consolidated';
-
   const filteredBudgetEntries = useMemo(() => {
     if (!searchTerm) return budgetEntries;
     return budgetEntries.filter(entry => entry.supplier.toLowerCase().includes(searchTerm.toLowerCase()));
   }, [budgetEntries, searchTerm]);
-
   const handleNewBudget = () => { if (!isConsolidated) { dispatch({ type: 'OPEN_BUDGET_MODAL', payload: null }); } };
   const handleEditEntry = (entry) => { dispatch({ type: 'OPEN_BUDGET_MODAL', payload: entry }); };
-
   const formatDate = (dateString) => dateString ? new Date(dateString).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '';
   const getFrequencyTitle = (entry) => {
     const freq = entry.frequency.charAt(0).toUpperCase() + entry.frequency.slice(1);
@@ -68,17 +68,11 @@ const BudgetTracker = ({ activeProject, budgetEntries, actualTransactions }) => 
     return `${freq} | ${period}`;
   };
   const getEcartColor = (ecart, isEntree) => ecart === 0 ? 'text-gray-600' : isEntree ? (ecart >= 0 ? 'text-green-600' : 'text-red-600') : (ecart > 0 ? 'text-red-600' : 'text-green-600');
-  
   const getActualAmountForEntry = (entryId, monthIndex, year) => {
     const entry = budgetEntries.find(e => e.id === entryId);
     if (!entry) return 0;
-    
-    // Find all actuals linked to this budget entry
     const linkedActuals = actualTransactions.filter(t => t.budgetId === entryId);
-    
-    // Sum payments that occurred for this entry, regardless of payment date
     return linkedActuals.reduce((sum, actual) => {
-        // The budget is for a specific month, so we only count payments for that month's commitment
         const budgetDate = new Date(actual.date);
         if (budgetDate.getFullYear() === year && budgetDate.getMonth() === monthIndex) {
             return sum + (actual.payments || []).reduce((pSum, p) => pSum + p.paidAmount, 0);
@@ -86,17 +80,14 @@ const BudgetTracker = ({ activeProject, budgetEntries, actualTransactions }) => 
         return sum;
     }, 0);
   };
-  
   const isRowVisibleForYear = (entry, year) => {
     for (let monthIndex = 0; monthIndex < 12; monthIndex++) {
       if (getEntryAmountForMonth(entry, monthIndex, year) > 0 || getActualAmountForEntry(entry.id, monthIndex, year) > 0) return true;
     }
     return false;
   };
-  
   const hasOffBudgetRevenuesForYear = (year) => budgetEntries.some(e => e.isOffBudget && e.type === 'revenu' && isRowVisibleForYear(e, year));
   const hasOffBudgetExpensesForYear = (year) => budgetEntries.some(e => e.isOffBudget && e.type === 'depense' && isRowVisibleForYear(e, year));
-
   const getPaymentsForCategoryAndMonth = (subCategoryName, monthIndex, year) => {
     let relevantActuals;
     if (subCategoryName === 'Sorties Hors Budget' || subCategoryName === 'Entrées Hors Budget') {
@@ -114,9 +105,7 @@ const BudgetTracker = ({ activeProject, budgetEntries, actualTransactions }) => 
     }
     return relevantActuals.flatMap(t => (t.payments || []).map(p => ({ ...p, thirdParty: t.thirdParty, type: t.type })));
   };
-  
   const getPaymentsForMainCategoryAndMonth = (mainCategory, monthIndex, year) => mainCategory.subCategories.flatMap(sc => getPaymentsForCategoryAndMonth(sc.name, monthIndex, year));
-
   const handleActualClick = (context) => {
     const { monthIndex, year } = context;
     let payments = [];
@@ -153,7 +142,6 @@ const BudgetTracker = ({ activeProject, budgetEntries, actualTransactions }) => 
     if (payments.length > 0) setDrawerData({ isOpen: true, transactions: payments, title: `${title} - ${months[monthIndex]} ${year}` });
   };
   const handleCloseDrawer = () => setDrawerData({ isOpen: false, transactions: [], title: '' });
-
   const groupedData = useMemo(() => {
     const entriesToGroup = filteredBudgetEntries.filter(e => !e.isOffBudget);
     const groupByType = (type) => {
@@ -167,20 +155,17 @@ const BudgetTracker = ({ activeProject, budgetEntries, actualTransactions }) => 
     };
     return { entree: groupByType('entree'), sortie: groupByType('sortie') };
   }, [filteredBudgetEntries, categories, displayYear]);
-
   const calculateMainCategoryTotals = (entries, monthIndex) => {
     const budget = entries.reduce((sum, entry) => sum + getEntryAmountForMonth(entry, monthIndex, displayYear), 0);
     const actual = entries.reduce((sum, entry) => sum + getActualAmountForEntry(entry.id, monthIndex, displayYear), 0);
     return { budget, actual, ecart: actual - budget };
   };
-  
   const calculateOffBudgetTotalsForMonth = (type, monthIndex) => {
       const offBudgetEntries = filteredBudgetEntries.filter(e => e.isOffBudget && e.type === type);
       const budget = offBudgetEntries.reduce((sum, entry) => sum + getEntryAmountForMonth(entry, monthIndex, displayYear), 0);
       const actual = offBudgetEntries.reduce((sum, entry) => sum + getActualAmountForEntry(entry.id, monthIndex, displayYear), 0);
       return { budget, actual, ecart: actual - budget };
   };
-
   const calculateGeneralTotals = (mainCategories, monthIndex, type) => {
     const totals = mainCategories.reduce((acc, mainCategory) => {
       const categoryTotals = calculateMainCategoryTotals(mainCategory.entries, monthIndex);
@@ -199,11 +184,8 @@ const BudgetTracker = ({ activeProject, budgetEntries, actualTransactions }) => 
     }
     return totals;
   };
-
   const monthlyPositions = useMemo(() => {
     const yearStart = new Date(displayYear, 0, 1);
-    
-    // Calculate total balance at the start of the year
     const initialBalanceSum = userCashAccounts.reduce((sum, acc) => sum + (parseFloat(acc.initialBalance) || 0), 0);
     const netFlowBeforeYear = actualTransactions
       .flatMap(actual => actual.payments || [])
@@ -213,35 +195,26 @@ const BudgetTracker = ({ activeProject, budgetEntries, actualTransactions }) => 
         return actual.type === 'receivable' ? sum + p.paidAmount : sum - p.paidAmount;
       }, 0);
     const totalBalanceAtYearStart = initialBalanceSum + netFlowBeforeYear;
-
-    // Calculate provisions blocked at the start of the year
     const provisionsBlockedAtYearStart = actualTransactions
       .filter(actual => actual.isProvision && new Date(actual.date) < yearStart && actual.status !== 'paid')
       .reduce((sum, actual) => {
         const paidAmount = (actual.payments || []).reduce((pSum, p) => pSum + p.paidAmount, 0);
         return sum + (actual.amount - paidAmount);
       }, 0);
-    
     const initialActionableBalance = totalBalanceAtYearStart - provisionsBlockedAtYearStart;
-
     const positions = [];
     let lastMonthFinalPosition = initialActionableBalance;
-
     for (let monthIndex = 0; monthIndex < 12; monthIndex++) {
       const revenueTotals = calculateGeneralTotals(groupedData.entree || [], monthIndex, 'entree');
       const expenseTotals = calculateGeneralTotals(groupedData.sortie || [], monthIndex, 'sortie');
       const netActual = revenueTotals.actual - expenseTotals.actual;
-
       const initialPosition = lastMonthFinalPosition;
       const finalPosition = initialPosition + netActual;
-      
       positions.push({ initial: initialPosition, final: finalPosition });
       lastMonthFinalPosition = finalPosition;
     }
     return positions;
   }, [displayYear, userCashAccounts, actualTransactions, groupedData]);
-
-
   const calculateCumulativeResult = (monthIndex) => {
     let cumulativeBudget = 0, cumulativeActual = 0;
     for (let i = 0; i <= monthIndex; i++) {
@@ -252,184 +225,316 @@ const BudgetTracker = ({ activeProject, budgetEntries, actualTransactions }) => 
     }
     return { budget: cumulativeBudget, actual: cumulativeActual, ecart: cumulativeActual - cumulativeBudget };
   };
-
-  const numVisibleCols = Object.values(visibleColumns).filter(Boolean).length;
+  const numVisibleCols = Object.values(visibleColumns).filter(v => typeof v === 'boolean' && v && !v.toString().includes('Row')).length;
   const monthColumnWidth = numVisibleCols > 0 ? numVisibleCols * 90 : 50;
   const separatorWidth = 4;
   const fixedColsWidth = columnWidths.category + columnWidths.supplier + (isConsolidated ? columnWidths.project : 0) + columnWidths.description;
   const totalTableWidth = fixedColsWidth + separatorWidth + (months.length * (monthColumnWidth + separatorWidth));
-  
   const supplierColLeft = columnWidths.category;
   const projectColLeft = supplierColLeft + columnWidths.supplier;
   const descriptionColLeft = isConsolidated ? projectColLeft + columnWidths.project : supplierColLeft + columnWidths.supplier;
   const totalCols = (isConsolidated ? 4 : 3) + 1 + (months.length * 2);
 
+  // --- Start of logic moved from CashflowView.jsx ---
+  const [timeUnit, setTimeUnit] = useState('week');
+  const [horizonLength, setHorizonLength] = useState(6);
+  const [cashflowDrawerData, setCashflowDrawerData] = useState({ isOpen: false, transactions: [], title: '' });
+  const [selectedScenarios, setSelectedScenarios] = useState({});
+  const projectScenarios = useMemo(() => {
+    if (isConsolidated) return [];
+    return scenarios.filter(s => s.projectId === activeProjectId);
+  }, [scenarios, activeProjectId, isConsolidated]);
+  useEffect(() => {
+    const initialSelection = {};
+    projectScenarios.forEach(s => { initialSelection[s.id] = true; });
+    setSelectedScenarios(initialSelection);
+  }, [projectScenarios]);
+  const handleScenarioSelectionChange = (scenarioId) => {
+    setSelectedScenarios(prev => ({ ...prev, [scenarioId]: !prev[scenarioId] }));
+  };
+  const baseActuals = useMemo(() => {
+    return actualTransactions;
+  }, [actualTransactions]);
+  const calculateCashflowData = (actualsForCalc) => {
+    const today = new Date();
+    const periods = [];
+    let chartStartDate;
+    let initialDate;
+    const pastPeriods = 2;
+    switch (timeUnit) {
+        case 'week': initialDate = getStartOfWeek(today); chartStartDate = new Date(initialDate); chartStartDate.setDate(chartStartDate.getDate() - pastPeriods * 7); break;
+        case 'month': initialDate = new Date(today.getFullYear(), today.getMonth(), 1); chartStartDate = new Date(initialDate); chartStartDate.setMonth(chartStartDate.getMonth() - pastPeriods); break;
+        case 'bimonthly': const bimonthStartMonth = Math.floor(today.getMonth() / 2) * 2; initialDate = new Date(today.getFullYear(), bimonthStartMonth, 1); chartStartDate = new Date(initialDate); chartStartDate.setMonth(chartStartDate.getMonth() - pastPeriods * 2); break;
+        case 'quarterly': const quarterStartMonth = Math.floor(today.getMonth() / 3) * 3; initialDate = new Date(today.getFullYear(), quarterStartMonth, 1); chartStartDate = new Date(initialDate); chartStartDate.setMonth(chartStartDate.getMonth() - pastPeriods * 3); break;
+        case 'semiannually': const semiAnnualStartMonth = Math.floor(today.getMonth() / 6) * 6; initialDate = new Date(today.getFullYear(), semiAnnualStartMonth, 1); chartStartDate = new Date(initialDate); chartStartDate.setMonth(chartStartDate.getMonth() - pastPeriods * 6); break;
+        case 'annually': initialDate = new Date(today.getFullYear(), 0, 1); chartStartDate = new Date(initialDate); chartStartDate.setFullYear(chartStartDate.getFullYear() - pastPeriods); break;
+        default: initialDate = getStartOfWeek(today); chartStartDate = new Date(initialDate); chartStartDate.setDate(chartStartDate.getDate() - pastPeriods * 7);
+    }
+    for (let i = -pastPeriods; i < horizonLength - pastPeriods; i++) {
+        const periodStart = new Date(initialDate);
+        switch (timeUnit) {
+            case 'week': periodStart.setDate(periodStart.getDate() + i * 7); break;
+            case 'month': periodStart.setMonth(periodStart.getMonth() + i); break;
+            case 'bimonthly': periodStart.setMonth(periodStart.getMonth() + i * 2); break;
+            case 'quarterly': periodStart.setMonth(periodStart.getMonth() + i * 3); break;
+            case 'semiannually': periodStart.setMonth(periodStart.getMonth() + i * 6); break;
+            case 'annually': periodStart.setFullYear(periodStart.getFullYear() + i); break;
+        }
+        periods.push(periodStart);
+    }
+    const initialBalancesSum = userCashAccounts.reduce((sum, acc) => sum + (parseFloat(acc.initialBalance) || 0), 0);
+    const pastPayments = Object.values(allActuals).flat().flatMap(actual => actual.payments || []).filter(p => new Date(p.paymentDate) < chartStartDate);
+    const netFlowOfPastPayments = pastPayments.reduce((sum, p) => {
+      const actual = Object.values(allActuals).flat().find(a => (a.payments || []).some(payment => payment.id === p.id));
+      if (!actual) return sum;
+      return actual.type === 'receivable' ? sum + p.paidAmount : sum - p.paidAmount;
+    }, 0);
+    const calculatedStartingBalance = initialBalancesSum + netFlowOfPastPayments;
+    const periodFlows = periods.map(periodStart => {
+      const periodEnd = new Date(periodStart);
+      switch (timeUnit) {
+          case 'week': periodEnd.setDate(periodEnd.getDate() + 7); break;
+          case 'month': periodEnd.setMonth(periodEnd.getMonth() + 1); break;
+          case 'bimonthly': periodEnd.setMonth(periodEnd.getMonth() + 2); break;
+          case 'quarterly': periodEnd.setMonth(periodEnd.getMonth() + 3); break;
+          case 'semiannually': periodEnd.setMonth(periodEnd.getMonth() + 6); break;
+          case 'annually': periodEnd.setFullYear(periodEnd.getFullYear() + 1); break;
+      }
+      const inflows = { realized: 0, planned: 0 };
+      const outflows = { realized: 0, planned: 0 };
+      actualsForCalc.forEach(actual => {
+        (actual.payments || []).forEach(payment => {
+          const paymentDate = new Date(payment.paymentDate);
+          if (paymentDate >= periodStart && paymentDate < periodEnd) {
+            if (actual.type === 'receivable') inflows.realized += payment.paidAmount;
+            else if (actual.type === 'payable') outflows.realized += payment.paidAmount;
+          }
+        });
+        const totalPaid = (actual.payments || []).reduce((sum, p) => sum + p.paidAmount, 0);
+        const remainingAmount = actual.amount - totalPaid;
+        const dueDate = new Date(actual.date);
+        if (remainingAmount > 0 && ['pending', 'partially_paid', 'partially_received'].includes(actual.status) && dueDate >= periodStart && dueDate < periodEnd) {
+          if (actual.type === 'receivable') inflows.planned += remainingAmount;
+          else if (actual.type === 'payable') outflows.planned += remainingAmount;
+        }
+      });
+      return { period: periodStart, inflows: inflows.realized + inflows.planned, outflows: outflows.realized + outflows.planned };
+    });
+    let currentBalance = calculatedStartingBalance;
+    const balanceData = [];
+    for (const flow of periodFlows) { currentBalance = currentBalance + flow.inflows - flow.outflows; balanceData.push(currentBalance.toFixed(2)); }
+    const labels = periods.map(p => {
+        const year = p.toLocaleDateString('fr-FR', { year: '2-digit' });
+        const months = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Juin', 'Juil', 'Août', 'Sep', 'Oct', 'Nov', 'Déc'];
+        switch (timeUnit) {
+            case 'week': return `Sem. du ${p.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })}`;
+            case 'month': return p.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+            case 'bimonthly': const startMonthB = months[p.getMonth()]; const endMonthB = months[(p.getMonth() + 1) % 12]; return `Bim. ${startMonthB}-${endMonthB} '${year}`;
+            case 'quarterly': const quarter = Math.floor(p.getMonth() / 3) + 1; return `T${quarter} '${year}`;
+            case 'semiannually': const semester = Math.floor(p.getMonth() / 6) + 1; return `S${semester} '${year}`;
+            case 'annually': return p.getFullYear();
+            default: return '';
+        }
+    });
+    return { labels, periods, inflows: periodFlows.map(w => w.inflows.toFixed(2)), outflows: periodFlows.map(w => w.outflows.toFixed(2)), balance: balanceData };
+  };
+  const cashflowData = useMemo(() => {
+    const baseFlow = calculateCashflowData(baseActuals);
+    const visibleScenariosOnChart = projectScenarios.filter(s => selectedScenarios[s.id]);
+    const currentProjectEntries = allEntries[activeProjectId] || [];
+    const scenarioFlows = visibleScenariosOnChart.map(scenario => {
+      const scenarioDeltas = scenarioEntries[scenario.id] || [];
+      const scenarioActuals = generateScenarioActuals(currentProjectEntries, baseActuals, scenarioDeltas, activeProjectId, userCashAccounts);
+      const flow = calculateCashflowData(scenarioActuals);
+      return { id: scenario.id, name: scenario.name, balance: flow.balance };
+    });
+    return { base: baseFlow, scenarios: scenarioFlows };
+  }, [baseActuals, projectScenarios, selectedScenarios, scenarioEntries, activeProjectId, allEntries, horizonLength, timeUnit, userCashAccounts]);
+  const handleCashflowChartClick = (params) => {
+    if (params.seriesName !== 'Entrées' && params.seriesName !== 'Sorties') return;
+    const periodIndex = params.dataIndex;
+    const periodStart = cashflowData.base.periods[periodIndex];
+    const periodEnd = new Date(periodStart);
+    switch (timeUnit) {
+        case 'week': periodEnd.setDate(periodEnd.getDate() + 7); break;
+        case 'month': periodEnd.setMonth(periodEnd.getMonth() + 1); break;
+        case 'bimonthly': periodEnd.setMonth(periodEnd.getMonth() + 2); break;
+        case 'quarterly': periodEnd.setMonth(periodEnd.getMonth() + 3); break;
+        case 'semiannually': periodEnd.setMonth(periodEnd.getMonth() + 6); break;
+        case 'annually': periodEnd.setFullYear(periodEnd.getFullYear() + 1); break;
+    }
+    const actualType = params.seriesName === 'Entrées' ? 'receivable' : 'payable';
+    const transactionsForDrawer = [];
+    baseActuals.forEach(actual => {
+      if (actual.type !== actualType) return;
+      (actual.payments || []).forEach(payment => {
+        const paymentDate = new Date(payment.paymentDate);
+        if (paymentDate >= periodStart && paymentDate < periodEnd) transactionsForDrawer.push({ id: payment.id, type: actual.type, thirdParty: actual.thirdParty, category: actual.category, amount: payment.paidAmount, date: payment.paymentDate, status: 'realized', cashAccount: payment.cashAccount });
+      });
+      const totalPaid = (actual.payments || []).reduce((sum, p) => sum + p.paidAmount, 0);
+      const remainingAmount = actual.amount - totalPaid;
+      const dueDate = new Date(actual.date);
+      if (remainingAmount > 0 && ['pending', 'partially_paid', 'partially_received'].includes(actual.status) && dueDate >= periodStart && dueDate < periodEnd) transactionsForDrawer.push({ id: actual.id + '-planned', type: actual.type, thirdParty: actual.thirdParty, category: actual.category, amount: remainingAmount, date: actual.date, status: 'planned' });
+    });
+    setCashflowDrawerData({ isOpen: true, transactions: transactionsForDrawer, title: `Détails des ${params.seriesName.toLowerCase()} - ${params.axisValue}` });
+  };
+  const onCashflowEvents = { 'click': handleCashflowChartClick };
+  const getCashflowChartOptions = () => {
+    const BASE_BALANCE_COLOR = '#3b82f6';
+    const SCENARIO_COLORS = ['#14b8a6', '#f97316', '#a855f7'];
+    const inflowColor = { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: 'rgba(52, 211, 153, 0.8)' }, { offset: 1, color: 'rgba(5, 150, 105, 0.8)' }] };
+    const outflowColor = { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: 'rgba(248, 113, 113, 0.8)' }, { offset: 1, color: 'rgba(220, 38, 38, 0.8)' }] };
+    const inflowFutureColor = { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: 'rgba(52, 211, 153, 0.4)' }, { offset: 1, color: 'rgba(5, 150, 105, 0.4)' }] };
+    const outflowFutureColor = { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: 'rgba(248, 113, 113, 0.4)' }, { offset: 1, color: 'rgba(220, 38, 38, 0.4)' }] };
+    const series = [
+      { name: 'Entrées', type: 'bar', data: cashflowData.base.inflows, emphasis: { focus: 'series' } },
+      { name: 'Sorties', type: 'bar', data: cashflowData.base.outflows, emphasis: { focus: 'series' } },
+      { name: 'Solde de trésorerie', type: 'line', smooth: true, data: cashflowData.base.balance, symbolSize: 8, color: BASE_BALANCE_COLOR, lineStyle: { width: 3, shadowColor: 'rgba(0, 0, 0, 0.2)', shadowBlur: 10, shadowOffsetY: 5 }, emphasis: { focus: 'series', scale: 1.2 } },
+      ...cashflowData.scenarios.map((scenario, index) => ({ name: scenario.name, type: 'line', smooth: true, data: scenario.balance, symbolSize: 8, color: SCENARIO_COLORS[index % SCENARIO_COLORS.length], lineStyle: { width: 3, type: 'dashed', shadowColor: 'rgba(0, 0, 0, 0.1)', shadowBlur: 8, shadowOffsetY: 3 }, emphasis: { focus: 'series', scale: 1.2 } }))
+    ];
+    return {
+      tooltip: { trigger: 'axis', axisPointer: { type: 'cross', label: { backgroundColor: '#2d3748' } }, backgroundColor: 'rgba(255, 255, 255, 0.95)', borderColor: '#e2e8f0', borderWidth: 1, borderRadius: 8, textStyle: { color: '#1a202c' }, padding: [10, 15], extraCssText: 'box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1); backdrop-filter: blur(4px);', formatter: (params) => { let tooltip = `${params[0].axisValue}<br/>`; params.forEach(param => { tooltip += `${param.marker} ${param.seriesName}: <strong>${formatCurrency(param.value, settings)}</strong><br/>`; }); return tooltip; } },
+      legend: { data: series.map(s => s.name), bottom: 10, type: 'scroll', icon: 'circle' },
+      grid: { left: '3%', right: '4%', bottom: '15%', containLabel: true },
+      xAxis: [{ type: 'category', boundaryGap: true, data: cashflowData.base.labels, axisLine: { show: false }, axisTick: { show: false }, splitLine: { show: false }, axisLabel: { color: '#4a5568' }, markLine: { symbol: 'none', silent: true, lineStyle: { type: 'dashed', color: '#9ca3af' }, data: [{ xAxis: 2, label: { show: true, formatter: 'Aujourd\'hui', position: 'insideStartTop', color: '#4a5568' } }] } }],
+      yAxis: [{ type: 'value', axisLabel: { formatter: (value) => formatCurrency(value, { ...settings, displayUnit: 'standard' }), color: '#4a5568' }, splitLine: { lineStyle: { type: 'dashed', color: '#e2e8f0' } }, axisLine: { show: false } }],
+      series,
+      visualMap: [
+        { show: false, seriesIndex: 0, dimension: 0, pieces: [{ lte: 2, color: inflowColor }, { gt: 2, color: inflowFutureColor }] },
+        { show: false, seriesIndex: 1, dimension: 0, pieces: [{ lte: 2, color: outflowColor }, { gt: 2, color: outflowFutureColor }] }
+      ],
+      animationDurationUpdate: 700,
+      animationEasingUpdate: 'cubicInOut',
+    };
+  };
+  const timeUnitOptions = { week: 'semaines', month: 'mois', bimonthly: 'bimestres', quarterly: 'trimestres', semiannually: 'semestres', annually: 'années' };
+  // --- End of logic moved from CashflowView.jsx ---
+
   const renderBudgetRows = (type) => {
     const mainCategories = groupedData[type];
     if (!mainCategories) return null;
-
     const offBudgetVisible = type === 'entree' ? hasOffBudgetRevenuesForYear(displayYear) : hasOffBudgetExpensesForYear(displayYear);
-    const offBudgetEntries = filteredBudgetEntries.filter(e => e.isOffBudget && e.type === (type === 'entree' ? 'revenu' : 'depense'));
-
+    const isCollapsed = type === 'entree' ? isEntreesCollapsed : isSortiesCollapsed;
+    const toggleMainCollapse = () => { if (type === 'entree') { setIsEntreesCollapsed(prev => !prev); } else { setIsSortiesCollapsed(prev => !prev); } };
     return (
       <>
-        <tr className="sticky top-[57px] z-20">
-          <th colSpan={totalCols} scope="colgroup" className="px-4 py-2 font-bold text-left text-gray-800 bg-gray-200">
-            <div className="flex items-center gap-2">{type === 'entree' ? <Building className="w-4 h-4" /> : <Calendar className="w-4 h-4" />} {type === 'entree' ? 'ENTRÉES' : 'SORTIES'}</div>
+        <tr className="sticky top-[57px] z-20 bg-gray-200 border-y-2 border-gray-300 cursor-pointer hover:bg-gray-300 transition-colors" onClick={toggleMainCollapse}>
+          <th colSpan={isConsolidated ? 4 : 3} scope="colgroup" className="px-4 py-2 font-bold text-left text-gray-900 bg-transparent sticky left-0 z-10">
+            <div className="flex items-center gap-2"><ChevronDown className={`w-4 h-4 transition-transform ${isCollapsed ? '-rotate-90' : ''}`} />{type === 'entree' ? <TrendingUp className="w-4 h-4 text-green-600" /> : <TrendingDown className="w-4 h-4 text-red-600" />}{type === 'entree' ? 'ENTRÉES' : 'SORTIES'}</div>
           </th>
-        </tr>
-        {mainCategories.map(mainCategory => {
-          const isMainCollapsed = collapsedItems[mainCategory.id];
-          return (
-            <React.Fragment key={mainCategory.id}>
-              <tr onClick={() => toggleCollapse(mainCategory.id)} className="bg-gray-100 font-semibold text-gray-700 cursor-pointer hover:bg-gray-200">
-                <td colSpan={isConsolidated ? 4 : 3} className="px-4 py-2 bg-gray-100 sticky left-0 z-10">
-                  <div className="flex items-center gap-2"><ChevronDown className={`w-4 h-4 transition-transform ${isMainCollapsed ? '-rotate-90' : ''}`} />{mainCategory.name}</div>
-                </td>
-                <td className="bg-white" style={{ width: `${separatorWidth}px` }}></td>
-                {months.flatMap((_, monthIndex) => {
-                  const totals = calculateMainCategoryTotals(mainCategory.entries, monthIndex);
-                  return [
-                    <td key={monthIndex} className="px-2 py-2">
-                      {numVisibleCols > 0 && <div className="flex gap-2 justify-around text-sm font-semibold">
-                        {visibleColumns.budget && <div className="flex-1 text-center">{formatCurrency(totals.budget, settings)}</div>}
-                        {visibleColumns.actual && <div className="flex-1 text-center">{formatCurrency(totals.actual, settings)}</div>}
-                        {visibleColumns.ecart && <div className={`flex-1 text-center ${getEcartColor(totals.ecart, type === 'entree')}`}>{formatCurrency(totals.ecart, settings)}</div>}
-                      </div>}
-                    </td>,
-                    <td key={`${monthIndex}-sep`} className="bg-white" style={{ width: `${separatorWidth}px` }}></td>
-                  ];
-                })}
-              </tr>
-              {!isMainCollapsed && mainCategory.entries.map((entry) => (
-                <tr key={entry.id} className="border-b border-gray-100 hover:bg-gray-50">
-                  <td className="pl-12 pr-4 py-1 font-normal text-gray-800 bg-white hover:bg-gray-50 sticky left-0 z-10" style={{ width: `${columnWidths.category}px` }}>{entry.category}</td>
-                  <td className="px-4 py-1 text-gray-700 bg-white hover:bg-gray-50 sticky z-10" style={{ width: `${columnWidths.supplier}px`, left: `${supplierColLeft}px` }}><div className="flex items-center gap-2"><User className="w-4 h-4 text-blue-600" />{entry.supplier}</div></td>
-                  {isConsolidated && (<td className="px-4 py-1 text-gray-700 bg-white hover:bg-gray-50 sticky z-10" style={{ width: `${columnWidths.project}px`, left: `${projectColLeft}px` }}><div className="flex items-center gap-2"><Folder className="w-4 h-4 text-gray-500" />{projects.find(p => p.id === entry.projectId)?.name || 'N/A'}</div></td>)}
-                  <td className="px-4 py-1 text-gray-600 bg-white hover:bg-gray-50 sticky z-10" style={{ width: `${columnWidths.description}px`, left: `${descriptionColLeft}px` }}>
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm truncate" title={getFrequencyTitle(entry)}>{entry.description || '-'}</span>
-                      <button onClick={() => handleEditEntry(entry)} className="p-1 text-gray-400 hover:text-blue-600 transition-colors disabled:text-gray-300 disabled:cursor-not-allowed" disabled={isConsolidated}><Edit className="w-4 h-4" /></button>
-                    </div>
-                  </td>
-                  <td className="bg-white" style={{ width: `${separatorWidth}px` }}></td>
-                  {months.flatMap((_, monthIndex) => {
-                    const budget = getEntryAmountForMonth(entry, monthIndex, displayYear);
-                    const actual = getActualAmountForEntry(entry.id, monthIndex, displayYear);
-                    const isProvisionEntry = entry.frequency === 'provision';
-                    return [
-                      <td key={monthIndex} className="px-2 py-1">
-                        {numVisibleCols > 0 && <div className="flex gap-2 justify-around items-center">
-                          {visibleColumns.budget && (
-                            <div className="flex-1 text-center text-xs">
-                              {isProvisionEntry && budget > 0 ? (
-                                <span className="flex items-center justify-center gap-1 text-indigo-600 font-semibold" title="Montant provisionné">
-                                  <Gem className="w-3 h-3" />
-                                  {formatCurrency(budget, settings)}
-                                </span>
-                              ) : (
-                                <span className="text-gray-600">{budget > 0 ? formatCurrency(budget, settings) : '-'}</span>
-                              )}
-                            </div>
-                          )}
-                          {visibleColumns.actual && <button onClick={() => actual > 0 && handleActualClick({ entryId: entry.id, monthIndex, year: displayYear })} disabled={actual === 0} className="flex-1 text-center text-xs font-semibold text-blue-600 disabled:text-gray-400 disabled:cursor-not-allowed hover:underline">{actual > 0 ? formatCurrency(actual, settings) : '-'}</button>}
-                          {visibleColumns.ecart && <div className={`flex-1 text-center text-xs font-semibold ${getEcartColor(actual - budget, type === 'entree')}`}>{budget > 0 || actual > 0 ? formatCurrency(actual - budget, settings) : '-'}</div>}
-                        </div>}
-                      </td>,
-                      <td key={`${monthIndex}-sep`} className="bg-white" style={{ width: `${separatorWidth}px` }}></td>
-                    ];
-                  })}
-                </tr>
-              ))}
-            </React.Fragment>
-          );
-        })}
-        {offBudgetVisible && (
-          <tr className={`bg-${type === 'entree' ? 'green' : 'orange'}-50 border-t border-b border-${type === 'entree' ? 'green' : 'orange'}-200`}>
-            <td colSpan={isConsolidated ? 4 : 3} className={`px-4 py-2 font-semibold text-${type === 'entree' ? 'green' : 'orange'}-700 bg-${type === 'entree' ? 'green' : 'orange'}-50 sticky left-0 z-10`}>{type === 'entree' ? 'Entrées' : 'Sorties'} Hors Budget</td>
-            <td className="bg-white" style={{ width: `${separatorWidth}px` }}></td>
-            {months.flatMap((_, monthIndex) => {
-              const totals = calculateOffBudgetTotalsForMonth(type === 'entree' ? 'revenu' : 'depense', monthIndex);
-              return [
-                <td key={monthIndex} className="px-2 py-2">
-                  {numVisibleCols > 0 && <div className="flex gap-2 justify-around text-sm font-semibold">
-                    {visibleColumns.budget && <div className={`flex-1 text-center text-${type === 'entree' ? 'green' : 'orange'}-700`}>{formatCurrency(totals.budget, settings)}</div>}
-                    {visibleColumns.actual && <button onClick={() => totals.actual > 0 && handleActualClick({ category: `${type === 'entree' ? 'Entrées' : 'Sorties'} Hors Budget`, monthIndex, year: displayYear })} disabled={totals.actual === 0} className={`flex-1 text-center text-${type === 'entree' ? 'green' : 'orange'}-700 hover:underline disabled:cursor-not-allowed disabled:opacity-60`}>{formatCurrency(totals.actual, settings)}</button>}
-                    {visibleColumns.ecart && <div className={`flex-1 text-center ${getEcartColor(totals.ecart, type === 'entree')}`}>{formatCurrency(totals.ecart, settings)}</div>}
-                  </div>}
-                </td>,
-                <td key={`${monthIndex}-sep`} className="bg-white" style={{ width: `${separatorWidth}px` }}></td>
-              ];
-            })}
-          </tr>
-        )}
-        <tr className="bg-gray-200 border-y-2 border-gray-300">
-          <td colSpan={isConsolidated ? 4 : 3} className="px-4 py-2 font-bold text-gray-900 bg-gray-200 sticky left-0 z-10">TOTAL {type === 'entree' ? 'ENTRÉES' : 'SORTIES'}</td>
           <td className="bg-white" style={{ width: `${separatorWidth}px` }}></td>
           {months.flatMap((_, monthIndex) => {
             const totals = calculateGeneralTotals(mainCategories, monthIndex, type);
-            return [
-              <td key={monthIndex} className="px-2 py-2">
-                {numVisibleCols > 0 && <div className="flex gap-2 justify-around text-sm font-bold">
-                  {visibleColumns.budget && <div className="flex-1 text-center text-gray-900">{formatCurrency(totals.budget, settings)}</div>}
-                  {visibleColumns.actual && <button onClick={() => totals.actual > 0 && handleActualClick({ type: type, monthIndex, year: displayYear })} disabled={totals.actual === 0} className="flex-1 text-center text-gray-900 hover:underline disabled:cursor-not-allowed disabled:opacity-60">{formatCurrency(totals.actual, settings)}</button>}
-                  {visibleColumns.ecart && <div className={`flex-1 text-center ${getEcartColor(totals.actual - totals.budget, type === 'entree')}`}>{formatCurrency(totals.actual - totals.budget, settings)}</div>}
-                </div>}
-              </td>,
-              <td key={`${monthIndex}-sep`} className="bg-white" style={{ width: `${separatorWidth}px` }}></td>
-            ];
+            return [<td key={monthIndex} className="px-2 py-2">{numVisibleCols > 0 && <div className="flex gap-2 justify-around text-sm font-bold">{visibleColumns.budget && <div className="flex-1 text-center text-gray-900">{formatCurrency(totals.budget, settings)}</div>}{visibleColumns.actual && <button onClick={(e) => { e.stopPropagation(); if (totals.actual > 0) handleActualClick({ type: type, monthIndex, year: displayYear }); }} disabled={totals.actual === 0} className="flex-1 text-center text-gray-900 hover:underline disabled:cursor-not-allowed disabled:opacity-60">{formatCurrency(totals.actual, settings)}</button>}{visibleColumns.ecart && <div className={`flex-1 text-center ${getEcartColor(totals.actual - totals.budget, type === 'entree')}`}>{formatCurrency(totals.actual - totals.budget, settings)}</div>}</div>}</td>, <td key={`${monthIndex}-sep`} className="bg-white" style={{ width: `${separatorWidth}px` }}></td>];
           })}
         </tr>
+        {!isCollapsed && (
+          <>
+            {mainCategories.map(mainCategory => {
+              const isMainCollapsed = collapsedItems[mainCategory.id];
+              return (
+                <React.Fragment key={mainCategory.id}>
+                  <tr onClick={() => toggleCollapse(mainCategory.id)} className="bg-gray-100 font-semibold text-gray-700 cursor-pointer hover:bg-gray-200">
+                    <td colSpan={isConsolidated ? 4 : 3} className="px-4 py-2 bg-gray-100 sticky left-0 z-10"><div className="flex items-center gap-2"><ChevronDown className={`w-4 h-4 transition-transform ${isMainCollapsed ? '-rotate-90' : ''}`} />{mainCategory.name}</div></td>
+                    <td className="bg-white" style={{ width: `${separatorWidth}px` }}></td>
+                    {months.flatMap((_, monthIndex) => {
+                      const totals = calculateMainCategoryTotals(mainCategory.entries, monthIndex);
+                      return [<td key={monthIndex} className="px-2 py-2">{numVisibleCols > 0 && <div className="flex gap-2 justify-around text-sm font-semibold">{visibleColumns.budget && <div className="flex-1 text-center">{formatCurrency(totals.budget, settings)}</div>}{visibleColumns.actual && <div className="flex-1 text-center">{formatCurrency(totals.actual, settings)}</div>}{visibleColumns.ecart && <div className={`flex-1 text-center ${getEcartColor(totals.ecart, type === 'entree')}`}>{formatCurrency(totals.ecart, settings)}</div>}</div>}</td>, <td key={`${monthIndex}-sep`} className="bg-white" style={{ width: `${separatorWidth}px` }}></td>];
+                    })}
+                  </tr>
+                  {!isMainCollapsed && mainCategory.entries.map((entry) => (
+                    <tr key={entry.id} className="border-b border-gray-100 hover:bg-gray-50">
+                      <td className="pl-12 pr-4 py-1 font-normal text-gray-800 bg-white hover:bg-gray-50 sticky left-0 z-10" style={{ width: `${columnWidths.category}px` }}>{entry.category}</td>
+                      <td className="px-4 py-1 text-gray-700 bg-white hover:bg-gray-50 sticky z-10" style={{ width: `${columnWidths.supplier}px`, left: `${supplierColLeft}px` }}><div className="flex items-center gap-2"><User className="w-4 h-4 text-blue-600" />{entry.supplier}</div></td>
+                      {isConsolidated && (<td className="px-4 py-1 text-gray-700 bg-white hover:bg-gray-50 sticky z-10" style={{ width: `${columnWidths.project}px`, left: `${projectColLeft}px` }}><div className="flex items-center gap-2"><Folder className="w-4 h-4 text-gray-500" />{projects.find(p => p.id === entry.projectId)?.name || 'N/A'}</div></td>)}
+                      <td className="px-4 py-1 text-gray-600 bg-white hover:bg-gray-50 sticky z-10" style={{ width: `${columnWidths.description}px`, left: `${descriptionColLeft}px` }}><div className="flex items-center justify-between"><span className="text-sm truncate" title={getFrequencyTitle(entry)}>{entry.description || '-'}</span><button onClick={() => handleEditEntry(entry)} className="p-1 text-gray-400 hover:text-blue-600 transition-colors disabled:text-gray-300 disabled:cursor-not-allowed" disabled={isConsolidated}><Edit className="w-4 h-4" /></button></div></td>
+                      <td className="bg-white" style={{ width: `${separatorWidth}px` }}></td>
+                      {months.flatMap((_, monthIndex) => {
+                        const budget = getEntryAmountForMonth(entry, monthIndex, displayYear);
+                        const actual = getActualAmountForEntry(entry.id, monthIndex, displayYear);
+                        const isProvisionEntry = entry.frequency === 'provision';
+                        return [<td key={monthIndex} className="px-2 py-1">{numVisibleCols > 0 && <div className="flex gap-2 justify-around items-center">{visibleColumns.budget && (<div className="flex-1 text-center text-xs">{isProvisionEntry && budget > 0 ? (<span className="flex items-center justify-center gap-1 text-indigo-600 font-semibold" title="Montant provisionné"><Gem className="w-3 h-3" />{formatCurrency(budget, settings)}</span>) : (<span className="text-gray-600">{budget > 0 ? formatCurrency(budget, settings) : '-'}</span>)}</div>)}{visibleColumns.actual && <button onClick={() => actual > 0 && handleActualClick({ entryId: entry.id, monthIndex, year: displayYear })} disabled={actual === 0} className="flex-1 text-center text-xs font-semibold text-blue-600 disabled:text-gray-400 disabled:cursor-not-allowed hover:underline">{actual > 0 ? formatCurrency(actual, settings) : '-'}</button>}{visibleColumns.ecart && <div className={`flex-1 text-center text-xs font-semibold ${getEcartColor(actual - budget, type === 'entree')}`}>{budget > 0 || actual > 0 ? formatCurrency(actual - budget, settings) : '-'}</div>}</div>}</td>, <td key={`${monthIndex}-sep`} className="bg-white" style={{ width: `${separatorWidth}px` }}></td>];
+                      })}
+                    </tr>
+                  ))}
+                </React.Fragment>
+              );
+            })}
+            {offBudgetVisible && (
+              <tr className={`bg-${type === 'entree' ? 'green' : 'orange'}-50 border-t border-b border-${type === 'entree' ? 'green' : 'orange'}-200`}>
+                <td colSpan={isConsolidated ? 4 : 3} className={`px-4 py-2 font-semibold text-${type === 'entree' ? 'green' : 'orange'}-700 bg-${type === 'entree' ? 'green' : 'orange'}-50 sticky left-0 z-10`}>{type === 'entree' ? 'Entrées' : 'Sorties'} Hors Budget</td>
+                <td className="bg-white" style={{ width: `${separatorWidth}px` }}></td>
+                {months.flatMap((_, monthIndex) => {
+                  const totals = calculateOffBudgetTotalsForMonth(type === 'entree' ? 'revenu' : 'depense', monthIndex);
+                  return [<td key={monthIndex} className="px-2 py-2">{numVisibleCols > 0 && <div className="flex gap-2 justify-around text-sm font-semibold">{visibleColumns.budget && <div className={`flex-1 text-center text-${type === 'entree' ? 'green' : 'orange'}-700`}>{formatCurrency(totals.budget, settings)}</div>}{visibleColumns.actual && <button onClick={() => totals.actual > 0 && handleActualClick({ category: `${type === 'entree' ? 'Entrées' : 'Sorties'} Hors Budget`, monthIndex, year: displayYear })} disabled={totals.actual === 0} className={`flex-1 text-center text-${type === 'entree' ? 'green' : 'orange'}-700 hover:underline disabled:cursor-not-allowed disabled:opacity-60`}>{formatCurrency(totals.actual, settings)}</button>}{visibleColumns.ecart && <div className={`flex-1 text-center ${getEcartColor(totals.ecart, type === 'entree')}`}>{formatCurrency(totals.ecart, settings)}</div>}</div>}</td>, <td key={`${monthIndex}-sep`} className="bg-white" style={{ width: `${separatorWidth}px` }}></td>];
+                })}
+              </tr>
+            )}
+          </>
+        )}
       </>
     );
   };
 
   return (
     <div className="container mx-auto p-6 max-w-full">
-      <div className="mb-6 p-4 bg-blue-50 border border-blue-200 text-blue-800 rounded-lg text-sm flex items-start gap-3">
-        <Info className="w-5 h-5 flex-shrink-0 mt-0.5" />
-        <div>
-          <h4 className="font-bold mb-1">Définissez vos Objectifs Annuels</h4>
-          <p>
-            Commencez par définir vos grandes enveloppes annuelles pour les entrées et les sorties. Cela vous permettra de suivre la progression de votre budget par rapport à vos objectifs stratégiques tout au long de l'année.
-          </p>
-        </div>
-      </div>
-
-      <AnnualGoalsTracker 
-        activeProject={activeProject}
-        budgetEntries={budgetEntries}
-        displayYear={displayYear}
-      />
+      <AnnualGoalsTracker activeProject={activeProject} budgetEntries={budgetEntries} displayYear={displayYear} />
       
-      <div className="mt-8 mb-4 p-4 bg-gray-50 border border-gray-200 text-gray-700 rounded-lg text-sm flex items-start gap-3">
-        <Table className="w-5 h-5 flex-shrink-0 mt-0.5 text-gray-500" />
-        <div>
-            <h4 className="font-bold mb-1">Budget Détaillé</h4>
-            <p>
-            Voici le cœur de votre outil. Comparez votre budget prévisionnel au réel, analysez les écarts mois par mois, et cliquez sur les montants "Réel" pour voir le détail des transactions.
-            </p>
-        </div>
-      </div>
-
-      <div className="my-4 flex flex-wrap items-center justify-between gap-4">
-        <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-semibold text-gray-700 flex items-center gap-2"><Eye className="w-4 h-4"/>Colonnes:</span>
-            <label className="flex items-center gap-2 text-sm cursor-pointer"><input type="checkbox" checked={visibleColumns.budget} onChange={() => setVisibleColumns(prev => ({ ...prev, budget: !prev.budget }))} className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"/> Budget</label>
-            <label className="flex items-center gap-2 text-sm cursor-pointer"><input type="checkbox" checked={visibleColumns.actual} onChange={() => setVisibleColumns(prev => ({ ...prev, actual: !prev.actual }))} className="h-4 w-4 rounded border-gray-300 text-gray-700 focus:ring-gray-600"/> Réel</label>
-            <label className="flex items-center gap-2 text-sm cursor-pointer"><input type="checkbox" checked={visibleColumns.ecart} onChange={() => setVisibleColumns(prev => ({ ...prev, ecart: !prev.ecart }))} className="h-4 w-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500"/> Écart</label>
+      <div className="bg-gray-100 p-3 rounded-lg mb-6">
+        <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-4">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+            <div className="flex items-center gap-2">
+              <label className="text-sm font-medium text-gray-600">Unité:</label>
+              <select value={timeUnit} onChange={(e) => setTimeUnit(e.target.value)} className="px-2 py-1 border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 text-sm">
+                <option value="week">Semaine</option>
+                <option value="month">Mois</option>
+                <option value="bimonthly">Bimestre</option>
+                <option value="quarterly">Trimestre</option>
+                <option value="semiannually">Semestre</option>
+                <option value="annually">Année</option>
+              </select>
+            </div>
+            <div className="flex items-center gap-2">
+              <label className="text-sm font-medium text-gray-600">Horizon:</label>
+              <select value={horizonLength} onChange={(e) => setHorizonLength(Number(e.target.value))} className="px-2 py-1 border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 text-sm">
+                <option value={6}>6 {timeUnitOptions[timeUnit]}</option>
+                <option value={8}>8 {timeUnitOptions[timeUnit]}</option>
+                <option value={10}>10 {timeUnitOptions[timeUnit]}</option>
+                <option value={12}>12 {timeUnitOptions[timeUnit]}</option>
+              </select>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 text-sm ml-auto">
+            <span className="font-medium text-gray-600">Solde de départ calculé:</span>
+            <span className="font-bold text-lg text-blue-700">{formatCurrency(cashflowData.base.balance[0] - (cashflowData.base.inflows[0] - cashflowData.base.outflows[0]), settings)}</span>
           </div>
         </div>
-        <div className="flex items-center gap-4">
-          <label htmlFor="search-supplier" className="relative text-gray-400 focus-within:text-gray-600 block">
-            <Search className="pointer-events-none w-5 h-5 absolute top-1/2 transform -translate-y-1/2 left-3" />
-            <input type="text" id="search-supplier" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Rechercher par Fournisseur/Client..." className="form-input block w-full pl-10 pr-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:border-blue-400 text-sm" />
-          </label>
-          <button onClick={handleNewBudget} className="text-blue-600 hover:bg-blue-100 px-4 py-2 rounded-lg font-medium flex items-center gap-2 transition-colors disabled:text-gray-400 disabled:cursor-not-allowed" disabled={isConsolidated}><Plus className="w-5 h-5" /> Nouveau Budget</button>
-        </div>
+        {!isConsolidated && projectScenarios.length > 0 && (
+          <div className="mt-3 pt-3 border-t border-gray-200">
+            <h4 className="text-sm font-medium text-gray-700 mb-2 flex items-center gap-2"><Layers className="w-4 h-4" /> Afficher les Scénarios</h4>
+            <div className="flex flex-wrap gap-x-6 gap-y-2">
+              {projectScenarios.map(scenario => (
+                <label key={scenario.id} className="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" checked={!!selectedScenarios[scenario.id]} onChange={() => handleScenarioSelectionChange(scenario.id)} className="h-4 w-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500" />
+                  <span className="text-sm font-medium text-gray-800">{scenario.name}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
+      <div className="bg-white p-6 rounded-lg shadow mb-8"><ReactECharts option={getCashflowChartOptions()} style={{ height: '500px', width: '100%' }} onEvents={onCashflowEvents} /></div>
 
+      <div className="mt-8 mb-4 p-4 bg-gray-50 border border-gray-200 text-gray-700 rounded-lg text-sm flex items-start gap-3">
+        <Table className="w-5 h-5 flex-shrink-0 mt-0.5 text-gray-500" /><p>Comparez votre budget au réel, analysez les écarts, et cliquez sur les montants "Réel" pour voir le détail.</p>
+      </div>
+      <div className="my-4 flex flex-wrap items-center justify-between gap-4">
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+          <div className="flex items-center gap-2"><span className="text-sm font-semibold text-gray-700 flex items-center gap-2"><Eye className="w-4 h-4"/>Colonnes:</span><label className="flex items-center gap-2 text-sm cursor-pointer"><input type="checkbox" checked={visibleColumns.budget} onChange={() => setVisibleColumns(prev => ({ ...prev, budget: !prev.budget }))} /> Budget</label><label className="flex items-center gap-2 text-sm cursor-pointer"><input type="checkbox" checked={visibleColumns.actual} onChange={() => setVisibleColumns(prev => ({ ...prev, actual: !prev.actual }))} /> Réel</label><label className="flex items-center gap-2 text-sm cursor-pointer"><input type="checkbox" checked={visibleColumns.ecart} onChange={() => setVisibleColumns(prev => ({ ...prev, ecart: !prev.ecart }))} /> Écart</label></div>
+          <div className="flex items-center gap-2"><span className="text-sm font-semibold text-gray-700 flex items-center gap-2"><Eye className="w-4 h-4"/>Lignes:</span><label className="flex items-center gap-2 text-sm cursor-pointer"><input type="checkbox" checked={visibleColumns.netResultRow} onChange={() => setVisibleColumns(prev => ({ ...prev, netResultRow: !prev.netResultRow }))} /> Résultat Net</label><label className="flex items-center gap-2 text-sm cursor-pointer"><input type="checkbox" checked={visibleColumns.cumulativeNetResultRow} onChange={() => setVisibleColumns(prev => ({ ...prev, cumulativeNetResultRow: !prev.cumulativeNetResultRow }))} /> Résultat Cumulé</label></div>
+        </div>
+        <div className="flex items-center gap-4"><label htmlFor="search-supplier" className="relative text-gray-400 focus-within:text-gray-600 block"><Search className="pointer-events-none w-5 h-5 absolute top-1/2 transform -translate-y-1/2 left-3" /><input type="text" id="search-supplier" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Rechercher par Tiers..." className="form-input block w-full pl-10 pr-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:border-blue-400 text-sm" /></label><button onClick={handleNewBudget} className="text-blue-600 hover:bg-blue-100 px-4 py-2 rounded-lg font-medium flex items-center gap-2 transition-colors disabled:text-gray-400 disabled:cursor-not-allowed" disabled={isConsolidated}><Plus className="w-5 h-5" /> Nouveau Budget</button></div>
+      </div>
       <div className="bg-white rounded-lg shadow-lg overflow-hidden">
         <div ref={topScrollRef} className="overflow-x-auto overflow-y-hidden custom-scrollbar"><div style={{ width: `${totalTableWidth}px`, height: '1px' }}></div></div>
         <div ref={mainScrollRef} className="overflow-x-auto custom-scrollbar">
@@ -441,105 +546,27 @@ const BudgetTracker = ({ activeProject, budgetEntries, actualTransactions }) => 
                 {isConsolidated && (<ResizableTh id="project" width={columnWidths.project} onResize={handleResize} className="sticky z-20" style={{ left: `${projectColLeft}px` }}>Projet</ResizableTh>)}
                 <ResizableTh id="description" width={columnWidths.description} onResize={handleResize} className="sticky z-20" style={{ left: `${descriptionColLeft}px` }}>Description</ResizableTh>
                 <th className="bg-white border-b-2" style={{ width: `${separatorWidth}px` }}></th>
-                {months.flatMap(month => [
-                  <th key={month} className="px-2 py-2 text-center font-semibold text-gray-900 border-b-2" style={{ minWidth: `${monthColumnWidth}px` }}>
-                    <div className="text-base mb-1">{`${month} '${String(displayYear).slice(-2)}`}</div>
-                    {numVisibleCols > 0 && <div className="flex gap-2 justify-around text-xs font-medium text-gray-600">
-                      {visibleColumns.budget && <div className="flex-1">Budget</div>}
-                      {visibleColumns.actual && <div className="flex-1">Réel</div>}
-                      {visibleColumns.ecart && <div className="flex-1">Écart</div>}
-                    </div>}
-                  </th>,
-                  <th key={`${month}-sep`} className="bg-white border-b-2" style={{ width: `${separatorWidth}px` }}></th>
-                ])}
+                {months.flatMap(month => [<th key={month} className="px-2 py-2 text-center font-semibold text-gray-900 border-b-2" style={{ minWidth: `${monthColumnWidth}px` }}><div className="text-base mb-1">{`${month} '${String(displayYear).slice(-2)}`}</div>{numVisibleCols > 0 && <div className="flex gap-2 justify-around text-xs font-medium text-gray-600">{visibleColumns.budget && <div className="flex-1">Budget</div>}{visibleColumns.actual && <div className="flex-1">Réel</div>}{visibleColumns.ecart && <div className="flex-1">Écart</div>}</div>}</th>, <th key={`${month}-sep`} className="bg-white border-b-2" style={{ width: `${separatorWidth}px` }}></th>])}
               </tr>
             </thead>
             <tbody>
-              <tr className="bg-blue-100 font-bold text-blue-800">
-                <td colSpan={isConsolidated ? 4 : 3} className="px-4 py-2 bg-blue-100 sticky left-0 z-10">Position Initiale Disponible</td>
-                <td className="bg-white"></td>
-                {months.flatMap((_, monthIndex) => (
-                    <React.Fragment key={monthIndex}>
-                        <td className="px-2 py-2 text-center" colSpan={1}>{formatCurrency(monthlyPositions[monthIndex].initial, settings)}</td>
-                        <td className="bg-white"></td>
-                    </React.Fragment>
-                ))}
-              </tr>
-
-              <tr className="bg-white">
-                <td colSpan={totalCols} className="py-2"></td>
-              </tr>
-
+              <tr className="bg-blue-100 font-bold text-blue-800"><td colSpan={isConsolidated ? 4 : 3} className="px-4 py-2 bg-blue-100 sticky left-0 z-10"><div className="flex items-center gap-2"><LogIn className="w-4 h-4" />Trésorerie au début du mois</div></td><td className="bg-white"></td>{months.flatMap((_, monthIndex) => (<React.Fragment key={monthIndex}><td className="px-2 py-2 text-center" colSpan={1}>{formatCurrency(monthlyPositions[monthIndex].initial, settings)}</td><td className="bg-white"></td></React.Fragment>))}</tr>
+              <tr className="bg-white"><td colSpan={totalCols} className="py-2"></td></tr>
               {renderBudgetRows('entree')}
-              
-              <tr className="bg-white">
-                <td colSpan={totalCols} className="py-2"></td>
-              </tr>
-              
+              <tr className="bg-white"><td colSpan={totalCols} className="py-2"></td></tr>
               {renderBudgetRows('sortie')}
-
-              <tr className="bg-white">
-                <td colSpan={totalCols} className="py-2"></td>
-              </tr>
-              
-              <tr className="bg-gray-300 border-t-2 border-gray-400">
-                <td colSpan={isConsolidated ? 4 : 3} className="px-4 py-2 font-bold text-gray-900 bg-gray-300 sticky left-0 z-10">RÉSULTAT NET MENSUEL</td>
-                <td className="bg-white" style={{ width: `${separatorWidth}px` }}></td>
-                {months.flatMap((_, monthIndex) => {
-                  const revenueTotals = calculateGeneralTotals(groupedData.entree || [], monthIndex, 'entree');
-                  const expenseTotals = calculateGeneralTotals(groupedData.sortie || [], monthIndex, 'sortie');
-                  const netBudget = revenueTotals.budget - expenseTotals.budget;
-                  const netActual = revenueTotals.actual - expenseTotals.actual;
-                  return [
-                    <td key={monthIndex} className="px-2 py-2">
-                      {numVisibleCols > 0 && <div className="flex gap-2 justify-around text-sm font-bold">
-                        {visibleColumns.budget && <div className="flex-1 text-center text-gray-900">{formatCurrency(netBudget, settings)}</div>}
-                        {visibleColumns.actual && <button onClick={() => netActual !== 0 && handleActualClick({ type: 'net', monthIndex, year: displayYear })} disabled={netActual === 0} className="flex-1 text-center text-gray-900 hover:underline disabled:cursor-not-allowed disabled:opacity-60">{formatCurrency(netActual, settings)}</button>}
-                        {visibleColumns.ecart && <div className={`flex-1 text-center ${getEcartColor(netActual - netBudget, true)}`}>{formatCurrency(netActual - netBudget, settings)}</div>}
-                      </div>}
-                    </td>,
-                    <td key={`${monthIndex}-sep`} className="bg-white" style={{ width: `${separatorWidth}px` }}></td>
-                  ];
-                })}
-              </tr>
-              <tr className="bg-white">
-                <td colSpan={totalCols} className="py-1"></td>
-              </tr>
-              <tr className="bg-gray-300 border-b-2 border-gray-400">
-                <td colSpan={isConsolidated ? 4 : 3} className="px-4 py-2 font-bold text-gray-900 bg-gray-300 sticky left-0 z-10">RÉSULTAT NET CUMULÉ</td>
-                <td className="bg-white" style={{ width: `${separatorWidth}px` }}></td>
-                {months.flatMap((_, monthIndex) => {
-                  const cumulativeResult = calculateCumulativeResult(monthIndex);
-                  return [
-                    <td key={monthIndex} className="px-2 py-2">
-                      {numVisibleCols > 0 && <div className="flex gap-2 justify-around text-sm font-bold">
-                        {visibleColumns.budget && <div className="flex-1 text-center text-gray-900">{formatCurrency(cumulativeResult.budget, settings)}</div>}
-                        {visibleColumns.actual && <div className="flex-1 text-center text-gray-900">{formatCurrency(cumulativeResult.actual, settings)}</div>}
-                        {visibleColumns.ecart && <div className={`flex-1 text-center ${getEcartColor(cumulativeResult.ecart, true)}`}>{formatCurrency(cumulativeResult.ecart, settings)}</div>}
-                      </div>}
-                    </td>,
-                    <td key={`${monthIndex}-sep`} className="bg-white" style={{ width: `${separatorWidth}px` }}></td>
-                  ];
-                })}
-              </tr>
-              <tr className="bg-white">
-                <td colSpan={totalCols} className="py-1"></td>
-              </tr>
-              <tr className="bg-green-200 font-bold text-green-900">
-                <td colSpan={isConsolidated ? 4 : 3} className="px-4 py-2 bg-green-200 sticky left-0 z-10">Position Finale Disponible</td>
-                <td className="bg-white"></td>
-                {months.flatMap((_, monthIndex) => (
-                    <React.Fragment key={monthIndex}>
-                        <td className="px-2 py-2 text-center" colSpan={1}>{formatCurrency(monthlyPositions[monthIndex].final, settings)}</td>
-                        <td className="bg-white"></td>
-                    </React.Fragment>
-                ))}
-              </tr>
+              <tr className="bg-white"><td colSpan={totalCols} className="py-2"></td></tr>
+              {visibleColumns.netResultRow && (<tr className="bg-gray-300 border-t-2 border-gray-400"><td colSpan={isConsolidated ? 4 : 3} className="px-4 py-2 font-bold text-gray-900 bg-gray-300 sticky left-0 z-10">RÉSULTAT NET MENSUEL</td><td className="bg-white" style={{ width: `${separatorWidth}px` }}></td>{months.flatMap((_, monthIndex) => { const revenueTotals = calculateGeneralTotals(groupedData.entree || [], monthIndex, 'entree'); const expenseTotals = calculateGeneralTotals(groupedData.sortie || [], monthIndex, 'sortie'); const netBudget = revenueTotals.budget - expenseTotals.budget; const netActual = revenueTotals.actual - expenseTotals.actual; return [<td key={monthIndex} className="px-2 py-2">{numVisibleCols > 0 && <div className="flex gap-2 justify-around text-sm font-bold">{visibleColumns.budget && <div className="flex-1 text-center text-gray-900">{formatCurrency(netBudget, settings)}</div>}{visibleColumns.actual && <button onClick={() => netActual !== 0 && handleActualClick({ type: 'net', monthIndex, year: displayYear })} disabled={netActual === 0} className="flex-1 text-center text-gray-900 hover:underline disabled:cursor-not-allowed disabled:opacity-60">{formatCurrency(netActual, settings)}</button>}{visibleColumns.ecart && <div className={`flex-1 text-center ${getEcartColor(netActual - netBudget, true)}`}>{formatCurrency(netActual - netBudget, settings)}</div>}</div>}</td>, <td key={`${monthIndex}-sep`} className="bg-white" style={{ width: `${separatorWidth}px` }}></td>]; })}</tr>)}
+              {visibleColumns.netResultRow && visibleColumns.cumulativeNetResultRow && (<tr className="bg-white"><td colSpan={totalCols} className="py-1"></td></tr>)}
+              {visibleColumns.cumulativeNetResultRow && (<tr className={`bg-gray-300 border-b-2 border-gray-400 ${!visibleColumns.netResultRow ? 'border-t-2' : ''}`}><td colSpan={isConsolidated ? 4 : 3} className="px-4 py-2 font-bold text-gray-900 bg-gray-300 sticky left-0 z-10">RÉSULTAT NET CUMULÉ</td><td className="bg-white" style={{ width: `${separatorWidth}px` }}></td>{months.flatMap((_, monthIndex) => { const cumulativeResult = calculateCumulativeResult(monthIndex); return [<td key={monthIndex} className="px-2 py-2">{numVisibleCols > 0 && <div className="flex gap-2 justify-around text-sm font-bold">{visibleColumns.budget && <div className="flex-1 text-center text-gray-900">{formatCurrency(cumulativeResult.budget, settings)}</div>}{visibleColumns.actual && <div className="flex-1 text-center text-gray-900">{formatCurrency(cumulativeResult.actual, settings)}</div>}{visibleColumns.ecart && <div className={`flex-1 text-center ${getEcartColor(cumulativeResult.ecart, true)}`}>{formatCurrency(cumulativeResult.ecart, settings)}</div>}</div>}</td>, <td key={`${monthIndex}-sep`} className="bg-white" style={{ width: `${separatorWidth}px` }}></td>]; })}</tr>)}
+              <tr className="bg-white"><td colSpan={totalCols} className="py-1"></td></tr>
+              <tr className="bg-green-200 font-bold text-green-900"><td colSpan={isConsolidated ? 4 : 3} className="px-4 py-2 bg-green-200 sticky left-0 z-10"><div className="flex items-center gap-2"><Flag className="w-4 h-4" />Trésorerie fin de mois</div></td><td className="bg-white"></td>{months.flatMap((_, monthIndex) => (<React.Fragment key={monthIndex}><td className="px-2 py-2 text-center" colSpan={1}>{formatCurrency(monthlyPositions[monthIndex].final, settings)}</td><td className="bg-white"></td></React.Fragment>))}</tr>
             </tbody>
           </table>
         </div>
       </div>
       <TransactionDetailDrawer isOpen={drawerData.isOpen} onClose={handleCloseDrawer} transactions={drawerData.transactions} title={drawerData.title} />
+      <CashflowDetailDrawer isOpen={cashflowDrawerData.isOpen} onClose={() => setCashflowDrawerData({ isOpen: false, transactions: [], title: '' })} transactions={cashflowDrawerData.transactions} title={cashflowDrawerData.title} />
     </div>
   );
 };

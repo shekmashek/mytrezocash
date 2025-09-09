@@ -13,7 +13,7 @@ const CashflowView = () => {
   const { activeProjectId, projects, allEntries, allActuals, userCashAccounts, settings, scenarios, scenarioEntries } = state;
   const isConsolidated = activeProjectId === 'consolidated';
 
-  const [timeUnit, setTimeUnit] = useState('week'); // 'week' or 'month'
+  const [timeUnit, setTimeUnit] = useState('week'); // 'week', 'month', 'bimonthly', 'quarterly', 'semiannually', 'annually'
   const [horizonLength, setHorizonLength] = useState(6);
   const [drawerData, setDrawerData] = useState({ isOpen: false, transactions: [], title: '' });
   const [selectedScenarios, setSelectedScenarios] = useState({});
@@ -43,25 +43,61 @@ const CashflowView = () => {
     const today = new Date();
     const periods = [];
     let chartStartDate;
+    
+    let initialDate;
+    const pastPeriods = 2; // Number of past periods to show
 
-    if (timeUnit === 'week') {
-      const currentWeekStart = getStartOfWeek(today);
-      chartStartDate = new Date(currentWeekStart);
-      chartStartDate.setDate(chartStartDate.getDate() - 14); // 2 weeks ago
-      for (let i = -2; i < horizonLength - 2; i++) {
-        const periodStart = new Date(currentWeekStart);
-        periodStart.setDate(periodStart.getDate() + i * 7);
+    switch (timeUnit) {
+        case 'week':
+            initialDate = getStartOfWeek(today);
+            chartStartDate = new Date(initialDate);
+            chartStartDate.setDate(chartStartDate.getDate() - pastPeriods * 7);
+            break;
+        case 'month':
+            initialDate = new Date(today.getFullYear(), today.getMonth(), 1);
+            chartStartDate = new Date(initialDate);
+            chartStartDate.setMonth(chartStartDate.getMonth() - pastPeriods);
+            break;
+        case 'bimonthly':
+            const bimonthStartMonth = Math.floor(today.getMonth() / 2) * 2;
+            initialDate = new Date(today.getFullYear(), bimonthStartMonth, 1);
+            chartStartDate = new Date(initialDate);
+            chartStartDate.setMonth(chartStartDate.getMonth() - pastPeriods * 2);
+            break;
+        case 'quarterly':
+            const quarterStartMonth = Math.floor(today.getMonth() / 3) * 3;
+            initialDate = new Date(today.getFullYear(), quarterStartMonth, 1);
+            chartStartDate = new Date(initialDate);
+            chartStartDate.setMonth(chartStartDate.getMonth() - pastPeriods * 3);
+            break;
+        case 'semiannually':
+            const semiAnnualStartMonth = Math.floor(today.getMonth() / 6) * 6;
+            initialDate = new Date(today.getFullYear(), semiAnnualStartMonth, 1);
+            chartStartDate = new Date(initialDate);
+            chartStartDate.setMonth(chartStartDate.getMonth() - pastPeriods * 6);
+            break;
+        case 'annually':
+            initialDate = new Date(today.getFullYear(), 0, 1);
+            chartStartDate = new Date(initialDate);
+            chartStartDate.setFullYear(chartStartDate.getFullYear() - pastPeriods);
+            break;
+        default:
+            initialDate = getStartOfWeek(today);
+            chartStartDate = new Date(initialDate);
+            chartStartDate.setDate(chartStartDate.getDate() - pastPeriods * 7);
+    }
+
+    for (let i = -pastPeriods; i < horizonLength - pastPeriods; i++) {
+        const periodStart = new Date(initialDate);
+        switch (timeUnit) {
+            case 'week': periodStart.setDate(periodStart.getDate() + i * 7); break;
+            case 'month': periodStart.setMonth(periodStart.getMonth() + i); break;
+            case 'bimonthly': periodStart.setMonth(periodStart.getMonth() + i * 2); break;
+            case 'quarterly': periodStart.setMonth(periodStart.getMonth() + i * 3); break;
+            case 'semiannually': periodStart.setMonth(periodStart.getMonth() + i * 6); break;
+            case 'annually': periodStart.setFullYear(periodStart.getFullYear() + i); break;
+        }
         periods.push(periodStart);
-      }
-    } else { // month
-      const currentMonthStart = new Date(today.getFullYear(), today.getMonth(), 1);
-      chartStartDate = new Date(currentMonthStart);
-      chartStartDate.setMonth(chartStartDate.getMonth() - 2); // 2 months ago
-      for (let i = -2; i < horizonLength - 2; i++) {
-        const periodStart = new Date(currentMonthStart);
-        periodStart.setMonth(periodStart.getMonth() + i);
-        periods.push(periodStart);
-      }
     }
     
     const initialBalancesSum = userCashAccounts.reduce((sum, acc) => sum + (parseFloat(acc.initialBalance) || 0), 0);
@@ -75,8 +111,14 @@ const CashflowView = () => {
 
     const periodFlows = periods.map(periodStart => {
       const periodEnd = new Date(periodStart);
-      if (timeUnit === 'week') periodEnd.setDate(periodEnd.getDate() + 7);
-      else periodEnd.setMonth(periodEnd.getMonth() + 1);
+      switch (timeUnit) {
+          case 'week': periodEnd.setDate(periodEnd.getDate() + 7); break;
+          case 'month': periodEnd.setMonth(periodEnd.getMonth() + 1); break;
+          case 'bimonthly': periodEnd.setMonth(periodEnd.getMonth() + 2); break;
+          case 'quarterly': periodEnd.setMonth(periodEnd.getMonth() + 3); break;
+          case 'semiannually': periodEnd.setMonth(periodEnd.getMonth() + 6); break;
+          case 'annually': periodEnd.setFullYear(periodEnd.getFullYear() + 1); break;
+      }
 
       const inflows = { realized: 0, planned: 0 };
       const outflows = { realized: 0, planned: 0 };
@@ -104,7 +146,27 @@ const CashflowView = () => {
     const balanceData = [];
     for (const flow of periodFlows) { currentBalance = currentBalance + flow.inflows - flow.outflows; balanceData.push(currentBalance.toFixed(2)); }
     
-    const labels = periods.map(p => timeUnit === 'week' ? `Sem. du ${p.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })}` : p.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' }));
+    const labels = periods.map(p => {
+        const year = p.toLocaleDateString('fr-FR', { year: '2-digit' });
+        const months = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Juin', 'Juil', 'Août', 'Sep', 'Oct', 'Nov', 'Déc'];
+        switch (timeUnit) {
+            case 'week': return `Sem. du ${p.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })}`;
+            case 'month': return p.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+            case 'bimonthly':
+                const startMonth = months[p.getMonth()];
+                const endMonth = months[(p.getMonth() + 1) % 12];
+                return `Bim. ${startMonth}-${endMonth} '${year}`;
+            case 'quarterly':
+                const quarter = Math.floor(p.getMonth() / 3) + 1;
+                return `T${quarter} '${year}`;
+            case 'semiannually':
+                const semester = Math.floor(p.getMonth() / 6) + 1;
+                return `S${semester} '${year}`;
+            case 'annually':
+                return p.getFullYear();
+            default: return '';
+        }
+    });
     
     return { labels, periods, inflows: periodFlows.map(w => w.inflows.toFixed(2)), outflows: periodFlows.map(w => w.outflows.toFixed(2)), balance: balanceData };
   };
@@ -127,8 +189,14 @@ const CashflowView = () => {
     const periodIndex = params.dataIndex;
     const periodStart = cashflowData.base.periods[periodIndex];
     const periodEnd = new Date(periodStart);
-    if (timeUnit === 'week') periodEnd.setDate(periodEnd.getDate() + 7);
-    else periodEnd.setMonth(periodEnd.getMonth() + 1);
+    switch (timeUnit) {
+        case 'week': periodEnd.setDate(periodEnd.getDate() + 7); break;
+        case 'month': periodEnd.setMonth(periodEnd.getMonth() + 1); break;
+        case 'bimonthly': periodEnd.setMonth(periodEnd.getMonth() + 2); break;
+        case 'quarterly': periodEnd.setMonth(periodEnd.getMonth() + 3); break;
+        case 'semiannually': periodEnd.setMonth(periodEnd.getMonth() + 6); break;
+        case 'annually': periodEnd.setFullYear(periodEnd.getFullYear() + 1); break;
+    }
     
     const actualType = params.seriesName === 'Entrées' ? 'receivable' : 'payable';
     const transactionsForDrawer = [];
@@ -176,17 +244,52 @@ const CashflowView = () => {
     };
   };
 
+  const timeUnitOptions = {
+    week: 'semaines',
+    month: 'mois',
+    bimonthly: 'bimestres',
+    quarterly: 'trimestres',
+    semiannually: 'semestres',
+    annually: 'années'
+  };
+
   return (
     <div className="container mx-auto p-6 max-w-full">
       <div className="mb-8 flex justify-between items-start"><div className="flex items-center gap-4"><AreaChart className="w-8 h-8 text-cyan-600" /><div><h1 className="text-3xl font-bold text-gray-900">Prévisions de Trésorerie</h1></div></div></div>
-      <div className="bg-white p-6 rounded-lg shadow mb-6">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div><label className="block text-sm font-medium text-gray-700 mb-2 flex items-center gap-2"><Calendar className="w-4 h-4" /> Unité de temps</label><select value={timeUnit} onChange={(e) => setTimeUnit(e.target.value)} className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"><option value="week">Semaine</option><option value="month">Mois</option></select></div>
-          <div><label className="block text-sm font-medium text-gray-700 mb-2 flex items-center gap-2"><Calendar className="w-4 h-4" /> Horizon de prévision</label><select value={horizonLength} onChange={(e) => setHorizonLength(Number(e.target.value))} className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"><option value={6}>6 {timeUnit === 'week' ? 'semaines' : 'mois'}</option><option value={8}>8 {timeUnit === 'week' ? 'semaines' : 'mois'}</option><option value={10}>10 {timeUnit === 'week' ? 'semaines' : 'mois'}</option><option value={12}>12 {timeUnit === 'week' ? 'semaines' : 'mois'}</option></select></div>
-          <div className="bg-blue-50 p-4 rounded-lg border border-blue-200"><p className="text-sm font-medium text-blue-700">Solde de départ calculé</p><p className="text-2xl font-bold text-blue-800">{formatCurrency(cashflowData.base.balance[0] - (cashflowData.base.inflows[0] - cashflowData.base.outflows[0]), settings)}</p></div>
+      <div className="bg-white p-4 rounded-lg shadow mb-6">
+        <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-4">
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-4">
+            <div className="flex items-center gap-2">
+              <label className="text-sm font-medium text-gray-700 shrink-0">Unité:</label>
+              <select value={timeUnit} onChange={(e) => setTimeUnit(e.target.value)} className="px-3 py-1.5 border rounded-lg focus:ring-2 focus:ring-blue-500 text-sm">
+                <option value="week">Semaine</option>
+                <option value="month">Mois</option>
+                <option value="bimonthly">Bimestre</option>
+                <option value="quarterly">Trimestre</option>
+                <option value="semiannually">Semestre</option>
+                <option value="annually">Année</option>
+              </select>
+            </div>
+            <div className="flex items-center gap-2">
+              <label className="text-sm font-medium text-gray-700 shrink-0">Horizon:</label>
+              <select value={horizonLength} onChange={(e) => setHorizonLength(Number(e.target.value))} className="px-3 py-1.5 border rounded-lg focus:ring-2 focus:ring-blue-500 text-sm">
+                <option value={6}>6 {timeUnitOptions[timeUnit]}</option>
+                <option value={8}>8 {timeUnitOptions[timeUnit]}</option>
+                <option value={10}>10 {timeUnitOptions[timeUnit]}</option>
+                <option value={12}>12 {timeUnitOptions[timeUnit]}</option>
+              </select>
+            </div>
+          </div>
+          <div className="bg-blue-50 p-3 rounded-lg border border-blue-200 text-right ml-auto">
+            <p className="text-xs font-medium text-blue-700">Solde de départ calculé</p>
+            <p className="text-xl font-bold text-blue-800">{formatCurrency(cashflowData.base.balance[0] - (cashflowData.base.inflows[0] - cashflowData.base.outflows[0]), settings)}</p>
+          </div>
         </div>
         {!isConsolidated && projectScenarios.length > 0 && (
-          <div className="mt-4 pt-4 border-t"><h4 className="text-sm font-medium text-gray-700 mb-2 flex items-center gap-2"><Layers className="w-4 h-4" /> Afficher les Scénarios</h4><div className="flex flex-wrap gap-x-6 gap-y-2">{projectScenarios.map(scenario => (<label key={scenario.id} className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={!!selectedScenarios[scenario.id]} onChange={() => handleScenarioSelectionChange(scenario.id)} className="h-4 w-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500" /><span className="text-sm font-medium text-gray-800">{scenario.name}</span></label>))}</div></div>
+          <div className="mt-4 pt-4 border-t">
+            <h4 className="text-sm font-medium text-gray-700 mb-2 flex items-center gap-2"><Layers className="w-4 h-4" /> Afficher les Scénarios</h4>
+            <div className="flex flex-wrap gap-x-6 gap-y-2">{projectScenarios.map(scenario => (<label key={scenario.id} className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={!!selectedScenarios[scenario.id]} onChange={() => handleScenarioSelectionChange(scenario.id)} className="h-4 w-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500" /><span className="text-sm font-medium text-gray-800">{scenario.name}</span></label>))}</div>
+          </div>
         )}
       </div>
       <div className="bg-white p-6 rounded-lg shadow"><ReactECharts option={getChartOptions()} style={{ height: '500px', width: '100%' }} onEvents={onEvents} /></div>

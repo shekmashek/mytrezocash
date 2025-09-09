@@ -5,7 +5,6 @@ import Header from './components/Header';
 import SubHeader from './components/SubHeader';
 import SettingsDrawerWrapper from './components/SettingsDrawerWrapper';
 import ActualsView from './components/ActualsView';
-import CashflowView from './components/CashflowView';
 import ScenarioView from './components/ScenarioView';
 import ExpenseAnalysisView from './components/ExpenseAnalysisView';
 import JournalsView from './components/JournalsView';
@@ -62,8 +61,6 @@ function App() {
         return <ActualsView type="payable" />;
       case 'receivables':
         return <ActualsView type="receivable" />;
-      case 'cashflow':
-        return <CashflowView />;
       case 'scenarios':
         return <ScenarioView />;
       case 'expenseAnalysis':

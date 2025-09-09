@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { User, BarChart3, AreaChart, ArrowDownUp, HandCoins, LayoutDashboard, Cog, Globe, Users, FolderKanban, Wallet, Layers, PieChart, BookOpen, Table, UserCog, Archive, LogOut } from 'lucide-react';
+import { User, BarChart3, ArrowDownUp, HandCoins, LayoutDashboard, Cog, Globe, Users, FolderKanban, Wallet, Layers, PieChart, BookOpen, Table, UserCog, Archive, LogOut } from 'lucide-react';
 import { useBudget } from '../context/BudgetContext';
 
 const Header = ({ onOpenSettingsDrawer }) => {
@@ -25,7 +25,6 @@ const Header = ({ onOpenSettingsDrawer }) => {
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, disabled: false },
     { id: 'budget', label: 'Budget', icon: Table, disabled: false },
-    { id: 'cashflow', label: 'Cashflow', icon: AreaChart, disabled: false },
     { id: 'payables', label: 'Sorties', icon: ArrowDownUp, disabled: isConsolidated },
     { id: 'receivables', label: 'Entrées', icon: HandCoins, disabled: isConsolidated },
     { id: 'expenseAnalysis', label: 'Analyse Sorties', icon: PieChart, disabled: false },

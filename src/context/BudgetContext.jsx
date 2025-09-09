@@ -65,17 +65,19 @@ const initialActuals = {
 };
 
 export const mainCashAccountCategories = [
-  { id: 'proCurrent', name: 'Compte courant professionnel' },
-  { id: 'persoCurrent', name: 'Compte courant personnel' },
-  { id: 'savings', name: 'Compte d\'epargne' },
-  { id: 'blocked', name: 'Compte bloqué (ou à termes)' },
-  { id: 'investment', name: 'Comptes d\'investissement' },
-  { id: 'cash', name: 'Espece' },
+  { id: 'bank', name: 'Comptes Bancaires' },
+  { id: 'cash', name: 'Cash / Espèce' },
+  { id: 'mobileMoney', name: 'Mobile Money' },
+  { id: 'savings', name: 'Épargne' },
+  { id: 'provisions', name: 'Provisions' },
 ];
 
 const initialUserCashAccounts = [
-  { id: uuidv4(), mainCategoryId: 'proCurrent', name: 'Compte Principal Pro', initialBalance: 10000, initialBalanceDate: '2025-01-01' },
+  { id: uuidv4(), mainCategoryId: 'bank', name: 'Compte Principal Pro', initialBalance: 10000, initialBalanceDate: '2025-01-01' },
   { id: uuidv4(), mainCategoryId: 'cash', name: 'Caisse Bureau', initialBalance: 500, initialBalanceDate: '2025-01-01' },
+  { id: uuidv4(), mainCategoryId: 'mobileMoney', name: 'Orange Money', initialBalance: 200, initialBalanceDate: '2025-01-01' },
+  { id: uuidv4(), mainCategoryId: 'savings', name: 'Compte Épargne A', initialBalance: 2000, initialBalanceDate: '2025-01-01' },
+  { id: uuidv4(), mainCategoryId: 'provisions', name: 'Provision Impôts', initialBalance: 0, initialBalanceDate: '2025-01-01' },
 ];
 
 const initialTiers = [];
@@ -780,10 +782,24 @@ const loadInitialState = () => {
             if (!parsedState.userCashAccounts || !Array.isArray(parsedState.userCashAccounts)) {
                 parsedState.userCashAccounts = initialUserCashAccounts;
             } else {
-                const needsMigration = parsedState.userCashAccounts.some(acc => !acc.mainCategoryId);
-                if (needsMigration) {
-                    parsedState.userCashAccounts = initialUserCashAccounts;
-                }
+                // Migration logic for cash accounts categories
+                const migrationMapping = {
+                    'proCurrent': 'bank',
+                    'persoCurrent': 'bank',
+                    'savings': 'savings',
+                    'blocked': 'provisions',
+                    'investment': 'savings',
+                    'cash': 'cash',
+                    'other': 'savings', // Default 'other' to 'savings'
+                };
+                const validCategories = mainCashAccountCategories.map(c => c.id);
+                parsedState.userCashAccounts.forEach(acc => {
+                    if (migrationMapping[acc.mainCategoryId]) {
+                        acc.mainCategoryId = migrationMapping[acc.mainCategoryId];
+                    } else if (!validCategories.includes(acc.mainCategoryId)) {
+                        acc.mainCategoryId = 'savings'; // Default any other old/unknown to 'savings'
+                    }
+                });
             }
 
             if (parsedState.projects && Array.isArray(parsedState.projects)) {

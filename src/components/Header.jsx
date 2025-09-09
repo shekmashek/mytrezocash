@@ -42,7 +42,7 @@ const SettingsLink = ({ item, isCollapsed, onClick }) => {
 
 const Header = ({ isCollapsed, onToggleCollapse, onOpenSettingsDrawer }) => {
   const { state, dispatch, logout } = useBudget();
-  const { currentView, activeProjectId } = state;
+  const { currentView, activeProjectId, settings } = state;
 
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
@@ -75,7 +75,6 @@ const Header = ({ isCollapsed, onToggleCollapse, onOpenSettingsDrawer }) => {
     { id: 'categoryManagement', label: 'Catégories', icon: FolderKanban, color: 'text-orange-500', disabled: false },
     { id: 'tiersManagement', label: 'Tiers', icon: Users, color: 'text-pink-500', disabled: false },
     { id: 'cashAccounts', label: 'Comptes', icon: Wallet, color: 'text-teal-500', disabled: false },
-    { id: 'currency', label: 'Devise', icon: Globe, color: 'text-blue-500', disabled: false },
     { id: 'archives', label: 'Archives', icon: Archive, color: 'text-slate-500', disabled: false },
   ];
 
@@ -88,6 +87,10 @@ const Header = ({ isCollapsed, onToggleCollapse, onOpenSettingsDrawer }) => {
       onOpenSettingsDrawer(itemId);
     }
     setIsSettingsOpen(false);
+  };
+  
+  const handleSettingsChange = (key, value) => {
+    dispatch({ type: 'UPDATE_SETTINGS', payload: { ...settings, [key]: value } });
   };
 
   return (
@@ -116,7 +119,7 @@ const Header = ({ isCollapsed, onToggleCollapse, onOpenSettingsDrawer }) => {
         </div>
       )}
 
-      <nav className="flex-1 px-2 py-4 space-y-2">
+      <nav className="flex-1 px-2 py-4 space-y-1 overflow-y-auto">
         <ul>
           {navItems.map(item => (
             <NavLink 
@@ -128,14 +131,53 @@ const Header = ({ isCollapsed, onToggleCollapse, onOpenSettingsDrawer }) => {
             />
           ))}
         </ul>
+        
+        <div className={`transition-opacity duration-200 ${isCollapsed ? 'opacity-0 h-0 overflow-hidden' : 'opacity-100'}`}>
+            <hr className="my-2 mx-2 border-gray-200" />
+            <div className="px-4 pt-2 pb-1">
+                <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Paramètres</h3>
+            </div>
+            <ul className="space-y-1 px-2 mt-1">
+                <li className="text-sm">
+                    <button onClick={() => handleSettingsItemClick('currency')} className="flex items-center w-full h-10 px-2 rounded-lg text-gray-600 hover:bg-gray-100">
+                        <Globe className="w-5 h-5 text-blue-500" />
+                        <span className="ml-4">Devise</span>
+                    </button>
+                </li>
+                <li className="text-sm px-2 py-2">
+                    <label className="block font-medium text-gray-600 mb-1">Unité</label>
+                    <select 
+                      value={settings.displayUnit || 'standard'} 
+                      onChange={(e) => handleSettingsChange('displayUnit', e.target.value)} 
+                      className="w-full text-sm rounded-md border-gray-300 focus:ring-blue-500 focus:border-blue-500 py-1"
+                    >
+                      <option value="standard">Standard</option>
+                      <option value="thousands">Milliers (K)</option>
+                      <option value="millions">Millions (M)</option>
+                    </select>
+                </li>
+                <li className="text-sm px-2 py-2">
+                    <label className="block font-medium text-gray-600 mb-1">Décimales</label>
+                    <select 
+                      value={settings.decimalPlaces ?? 2} 
+                      onChange={(e) => handleSettingsChange('decimalPlaces', Number(e.target.value))} 
+                      className="w-full text-sm rounded-md border-gray-300 focus:ring-blue-500 focus:border-blue-500 py-1"
+                    >
+                      <option value={0}>0</option>
+                      <option value={1}>1</option>
+                      <option value={2}>2</option>
+                    </select>
+                </li>
+            </ul>
+        </div>
       </nav>
 
       <div className="px-2 py-4 border-t">
         <div ref={settingsRef} className={`${isCollapsed ? 'relative' : ''}`}>
-          <button title={isCollapsed ? 'Paramètres' : ''} onClick={() => setIsSettingsOpen(!isSettingsOpen)} className={`flex items-center w-full h-12 px-4 rounded-lg text-sm font-semibold transition-colors text-gray-600 hover:bg-gray-100 hover:text-gray-900`}>
+          <button title={isCollapsed ? 'Paramètres avancés' : ''} onClick={() => setIsSettingsOpen(!isSettingsOpen)} className={`flex items-center w-full h-12 px-4 rounded-lg text-sm font-semibold transition-colors text-gray-600 hover:bg-gray-100 hover:text-gray-900`}>
             <Cog className="w-5 h-5 shrink-0" />
             <span className={`ml-4 transition-opacity duration-200 ${isCollapsed ? 'opacity-0' : 'opacity-100'}`}>
-              Paramètres
+              Avancés
             </span>
           </button>
           {isSettingsOpen && (

@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useBudget } from './context/BudgetContext';
 import BudgetTracker from './components/BudgetTracker';
 import Header from './components/Header';
@@ -16,6 +16,8 @@ import AuthView from './components/AuthView';
 function App() {
   const { state, dispatch } = useBudget();
   const { activeProjectId, currentView, activeSettingsDrawer, isBudgetModalOpen, editingEntry, infoModal, isAuthenticated } = state;
+
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
   const { activeProject, activeEntries, activeActuals } = useMemo(() => {
     const { projects, allEntries, allActuals } = state;
@@ -75,10 +77,18 @@ function App() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
-      <Header onOpenSettingsDrawer={onOpenSettingsDrawer} />
-      <SubHeader />
-      <main className="flex-grow">{renderCurrentView()}</main>
+    <div className="flex min-h-screen bg-gray-100">
+      <Header 
+        isCollapsed={isSidebarCollapsed} 
+        onToggleCollapse={() => setIsSidebarCollapsed(prev => !prev)}
+        onOpenSettingsDrawer={onOpenSettingsDrawer} 
+      />
+      <div className="flex-1 flex flex-col overflow-hidden">
+        <SubHeader />
+        <main className="flex-grow overflow-y-auto bg-gray-50">
+            {renderCurrentView()}
+        </main>
+      </div>
       <SettingsDrawerWrapper activeDrawer={activeSettingsDrawer} onClose={() => dispatch({ type: 'SET_ACTIVE_SETTINGS_DRAWER', payload: null })} />
       {isBudgetModalOpen && (
         <BudgetModal 

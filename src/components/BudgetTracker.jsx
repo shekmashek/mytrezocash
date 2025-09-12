@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { Plus, Edit, Eye, Search, Gem, Info, Table, LogIn, Flag, ChevronDown, User, Folder, TrendingUp, TrendingDown, Target, AreaChart, Layers } from 'lucide-react';
+import { Plus, Edit, Eye, Search, Gem, Info, Table, LogIn, Flag, ChevronDown, User, Folder, TrendingUp, TrendingDown, Target, Layers } from 'lucide-react';
 import ReactECharts from 'echarts-for-react';
 import CashflowDetailDrawer from './CashflowDetailDrawer';
 import ResizableTh from './ResizableTh';
@@ -48,10 +48,20 @@ const BudgetTracker = ({ activeProject, budgetEntries, actualTransactions }) => 
   }, []);
   const handleResize = (columnId, newWidth) => setColumnWidths(prev => ({ ...prev, [columnId]: Math.max(newWidth, 80) }));
   const isConsolidated = activeProject.id === 'consolidated';
+  
   const filteredBudgetEntries = useMemo(() => {
-    if (!searchTerm) return budgetEntries;
-    return budgetEntries.filter(entry => entry.supplier.toLowerCase().includes(searchTerm.toLowerCase()));
-  }, [budgetEntries, searchTerm]);
+    if (!searchTerm) {
+      return budgetEntries;
+    }
+    const lowercasedFilter = searchTerm.toLowerCase();
+    return budgetEntries.filter(entry => {
+      const projectName = isConsolidated ? (projects.find(p => p.id === entry.projectId)?.name || '') : '';
+      return (entry.supplier && entry.supplier.toLowerCase().includes(lowercasedFilter)) ||
+             (entry.category && entry.category.toLowerCase().includes(lowercasedFilter)) ||
+             (entry.description && entry.description.toLowerCase().includes(lowercasedFilter)) ||
+             (isConsolidated && projectName.toLowerCase().includes(lowercasedFilter));
+    });
+  }, [budgetEntries, searchTerm, isConsolidated, projects]);
   
   const handleNewEntry = (type) => {
     if (!isConsolidated) {
@@ -84,7 +94,7 @@ const BudgetTracker = ({ activeProject, budgetEntries, actualTransactions }) => 
       // This case should be rare with the current logic but is a safeguard.
       alert("Plusieurs transactions réelles correspondent à cette période. L'édition directe n'est pas supportée dans ce cas.");
     } else {
-      console.warn("No corresponding actual found for this budget cell.");
+       dispatch({ type: 'OPEN_ACTUAL_EDITOR_DRAWER', payload: entryId });
     }
   };
 
@@ -94,7 +104,7 @@ const BudgetTracker = ({ activeProject, budgetEntries, actualTransactions }) => 
         return total + (actual.payments || []).reduce((sum, payment) => {
             const paymentDate = new Date(payment.paymentDate);
             if (paymentDate >= periodStart && paymentDate < periodEnd) {
-                return sum + payment.paidAmount;
+                return sum + (payment.paidAmount || 0);
             }
             return sum;
         }, 0);
@@ -105,25 +115,40 @@ const BudgetTracker = ({ activeProject, budgetEntries, actualTransactions }) => 
   const hasOffBudgetExpenses = () => budgetEntries.some(e => e.isOffBudget && e.type === 'depense');
   
   const groupedData = useMemo(() => {
-    const groupEntries = (entries, categoryList) => {
-        if (!categoryList) return [];
-        return categoryList
-            .map(mainCat => {
-                if (!mainCat.subCategories) return null;
-                const entriesForMainCat = entries.filter(entry =>
-                    mainCat.subCategories.some(sc => sc.name === entry.category)
-                );
-                return entriesForMainCat.length > 0 ? { ...mainCat, entries: entriesForMainCat } : null;
-            })
-            .filter(Boolean);
+    const groupEntries = (entries, categoryList, type) => {
+      if (!categoryList || !entries) return [];
+      const grouped = {};
+      const uncategorized = {
+        id: `uncategorized-${type}`,
+        name: 'Non Catégorisé',
+        entries: [],
+      };
+  
+      entries.forEach(entry => {
+        const mainCat = categoryList.find(mc => mc.subCategories.some(sc => sc.name === entry.category));
+        if (mainCat) {
+          if (!grouped[mainCat.id]) {
+            grouped[mainCat.id] = { ...mainCat, entries: [] };
+          }
+          grouped[mainCat.id].entries.push(entry);
+        } else {
+          uncategorized.entries.push(entry);
+        }
+      });
+      
+      const result = Object.values(grouped);
+      if (uncategorized.entries.length > 0) {
+        result.push(uncategorized);
+      }
+      return result.filter(g => g.entries.length > 0);
     };
-
-    const revenues = filteredBudgetEntries.filter(e => !e.isOffBudget && e.type === 'revenu');
-    const expenses = filteredBudgetEntries.filter(e => !e.isOffBudget && e.type === 'depense');
-
+  
+    const revenues = filteredBudgetEntries.filter(e => e && !e.isOffBudget && e.type === 'revenu');
+    const expenses = filteredBudgetEntries.filter(e => e && !e.isOffBudget && e.type === 'depense');
+  
     return {
-        entree: groupEntries(revenues, categories.revenue),
-        sortie: groupEntries(expenses, categories.expense),
+      entree: groupEntries(revenues, categories.revenue, 'entree'),
+      sortie: groupEntries(expenses, categories.expense, 'sortie'),
     };
   }, [filteredBudgetEntries, categories]);
 
@@ -179,10 +204,21 @@ const BudgetTracker = ({ activeProject, budgetEntries, actualTransactions }) => 
         }
         periods.push(periodStart);
     }
-    const initialBalancesSum = userCashAccounts.reduce((sum, acc) => sum + (parseFloat(acc.initialBalance) || 0), 0);
-    const pastPayments = Object.values(allActuals).flat().flatMap(actual => actual.payments || []).filter(p => new Date(p.paymentDate) < chartStartDate);
+    
+    const accountsForBalance = isConsolidated
+        ? userCashAccounts
+        : userCashAccounts.filter(acc => acc.projectId === activeProjectId);
+
+    const initialBalancesSum = accountsForBalance.reduce((sum, acc) => sum + (parseFloat(acc.initialBalance) || 0), 0);
+
+    const actualsForPastPayments = isConsolidated
+        ? Object.values(allActuals).flat()
+        : (allActuals[activeProjectId] || []);
+
+    const pastPayments = actualsForPastPayments.flatMap(actual => actual.payments || []).filter(p => new Date(p.paymentDate) < chartStartDate);
+
     const netFlowOfPastPayments = pastPayments.reduce((sum, p) => {
-      const actual = Object.values(allActuals).flat().find(a => (a.payments || []).some(payment => payment.id === p.id));
+      const actual = actualsForPastPayments.find(a => (a.payments || []).some(payment => payment.id === p.id));
       if (!actual) return sum;
       return actual.type === 'receivable' ? sum + p.paidAmount : sum - p.paidAmount;
     }, 0);
@@ -447,7 +483,7 @@ const BudgetTracker = ({ activeProject, budgetEntries, actualTransactions }) => 
       xAxis: [{ type: 'category', data: cashflowData.base.labels, axisLine: { show: false }, axisTick: { show: false }, splitLine: { show: false }, axisLabel: { color: '#4a5568' }, markLine: { symbol: 'none', silent: true, lineStyle: { type: 'dashed', color: '#9ca3af' }, data: markLineData } }],
       yAxis: [
         { type: 'value', name: 'Flux (Entrées/Sorties)', axisLabel: { formatter: (value) => formatCurrency(value, { ...settings, displayUnit: 'standard' }), color: '#4a5568' }, splitLine: { lineStyle: { type: 'dashed', color: '#e2e8f0' } }, axisLine: { show: false } },
-        { type: 'value', name: 'Solde', axisLabel: { formatter: (value) => formatCurrency(value, { ...settings, displayUnit: 'standard' }), color: '#4a5568' }, splitLine: { show: false }, axisLine: { show: false } }
+        { type: 'value', name: 'Solde', scale: true, axisLabel: { formatter: (value) => formatCurrency(value, { ...settings, displayUnit: 'standard' }), color: '#4a5568' }, splitLine: { show: false }, axisLine: { show: false } }
       ],
       series,
       animationDurationUpdate: 700,
@@ -686,6 +722,7 @@ const BudgetTracker = ({ activeProject, budgetEntries, actualTransactions }) => 
           </table>
         </div>
       </div>
+      
       <CashflowDetailDrawer 
         isOpen={cashflowDrawerData.isOpen} 
         onClose={() => setCashflowDrawerData({ isOpen: false, transactions: [], title: '', timeUnit: 'week' })} 

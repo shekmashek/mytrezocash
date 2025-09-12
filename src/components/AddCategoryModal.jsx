@@ -1,18 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { X, Save, FolderPlus } from 'lucide-react';
 
-const AddCategoryModal = ({ isOpen, onClose, onSave, availableCategories, type }) => {
+const AddCategoryModal = ({ isOpen, onClose, onSave, availableCategories, type, initialMainCategoryId }) => {
   const [mainCategoryId, setMainCategoryId] = useState('');
   const [subCategoryName, setSubCategoryName] = useState('');
 
   useEffect(() => {
-    if (isOpen && availableCategories.length > 0) {
-      setMainCategoryId(availableCategories[0].id);
-    } else {
-      setMainCategoryId('');
+    if (isOpen) {
+      setMainCategoryId(initialMainCategoryId || (availableCategories.length > 0 ? availableCategories[0].id : ''));
     }
     setSubCategoryName('');
-  }, [isOpen, availableCategories]);
+  }, [isOpen, availableCategories, initialMainCategoryId]);
 
   const handleSubmit = (e) => {
     e.preventDefault();

@@ -1,6 +1,5 @@
 import React, { createContext, useContext, useReducer, useEffect } from 'react';
 import { v4 as uuidv4 } from 'uuid';
-import { getEntryAmountForMonth } from '../utils/budgetCalculations';
 
 // --- Initial State Definition ---
 const getDefaultExpenseTargets = () => ({
@@ -14,6 +13,7 @@ const getDefaultExpenseTargets = () => ({
   'exp-main-8': 5,  // Formation
   'exp-main-9': 5,  // Innovation, Recherche et développement
   'exp-main-10': 0, // Famille
+  'exp-main-11': 0, // Achat de marchandise
 });
 
 const initialProjects = [
@@ -50,13 +50,14 @@ const initialCategories = {
     { id: 'exp-main-8', name: 'Formation', isFixed: true, subCategories: [] },
     { id: 'exp-main-9', name: 'Innovation, Recherche et développement', isFixed: true, subCategories: [] },
     { id: 'exp-main-10', name: 'Famille', isFixed: false, subCategories: [{ id: uuidv4(), name: 'Logement' }, { id: uuidv4(), name: 'Alimentation' }, { id: uuidv4(), name: 'Transport' }, { id: uuidv4(), name: 'Santé' }, { id: uuidv4(), name: 'Loisirs' }, { id: uuidv4(), name: 'Enfant et education' }] },
+    { id: 'exp-main-11', name: 'Achat de marchandise', isFixed: true, subCategories: [{ id: uuidv4(), name: 'Achats de marchandises (revendues en l\'état)' }, { id: uuidv4(), name: 'Achats de matières premières (transformées)' }, { id: uuidv4(), name: 'Achats d\'emballages' }] },
   ]
 };
 
 const initialEntries = {
   'proj-1': [
-    { id: 'budget-expense-1', type: 'depense', category: 'Loyer et charges', frequency: 'mensuel', amount: 1200, startDate: '2025-01-01', endDate: null, supplier: 'Agence Immo', description: 'Loyer bureaux' },
-    { id: 'budget-revenue-1', type: 'revenu', category: 'Ventes de services', frequency: 'mensuel', amount: 5000, startDate: '2025-01-01', endDate: null, supplier: 'Client Principal', description: 'Contrat de maintenance' }
+    { id: 'budget-expense-1', type: 'depense', category: 'Loyer et charges', frequency: 'mensuel', amount: 1200, startDate: '2025-01-05', date: '2025-01-05', endDate: null, supplier: 'Agence Immo', description: 'Loyer bureaux' },
+    { id: 'budget-revenue-1', type: 'revenu', category: 'Ventes de services', frequency: 'mensuel', amount: 5000, startDate: '2025-01-15', date: '2025-01-15', endDate: null, supplier: 'Client Principal', description: 'Contrat de maintenance' }
   ],
   'proj-2': [],
 };
@@ -75,11 +76,14 @@ export const mainCashAccountCategories = [
 ];
 
 const initialUserCashAccounts = [
-  { id: uuidv4(), mainCategoryId: 'bank', name: 'Compte Principal Pro', initialBalance: 10000, initialBalanceDate: '2025-01-01' },
-  { id: uuidv4(), mainCategoryId: 'cash', name: 'Caisse Bureau', initialBalance: 500, initialBalanceDate: '2025-01-01' },
-  { id: uuidv4(), mainCategoryId: 'mobileMoney', name: 'Orange Money', initialBalance: 200, initialBalanceDate: '2025-01-01' },
-  { id: uuidv4(), mainCategoryId: 'savings', name: 'Compte Épargne A', initialBalance: 2000, initialBalanceDate: '2025-01-01' },
-  { id: uuidv4(), mainCategoryId: 'provisions', name: 'Provision Impôts', initialBalance: 0, initialBalanceDate: '2025-01-01' },
+  // Project 1 accounts
+  { id: uuidv4(), mainCategoryId: 'bank', name: 'Compte Principal Pro', initialBalance: 10000, initialBalanceDate: '2025-01-01', projectId: 'proj-1' },
+  { id: uuidv4(), mainCategoryId: 'cash', name: 'Caisse Bureau', initialBalance: 500, initialBalanceDate: '2025-01-01', projectId: 'proj-1' },
+  { id: uuidv4(), mainCategoryId: 'mobileMoney', name: 'Orange Money', initialBalance: 200, initialBalanceDate: '2025-01-01', projectId: 'proj-1' },
+  { id: uuidv4(), mainCategoryId: 'savings', name: 'Compte Épargne A', initialBalance: 2000, initialBalanceDate: '2025-01-01', projectId: 'proj-1' },
+  { id: uuidv4(), mainCategoryId: 'provisions', name: 'Provision Impôts', initialBalance: 0, initialBalanceDate: '2025-01-01', projectId: 'proj-1' },
+  // Project 2 accounts
+  { id: uuidv4(), mainCategoryId: 'bank', name: 'Compte Personnel', initialBalance: 1500, initialBalanceDate: '2025-01-01', projectId: 'proj-2' },
 ];
 
 const initialTiers = [];
@@ -99,6 +103,129 @@ const CONSOLIDATED_PROJECT_ID = 'consolidated';
 // --- Reducer Function ---
 const budgetReducer = (state, action) => {
   switch (action.type) {
+    case 'SETUP_FIRST_PROJECT': {
+        const { projectName, settings, accounts, entries } = action.payload;
+
+        // 1. Create the project
+        const newProject = { 
+            id: uuidv4(), 
+            name: projectName, 
+            expenseTargets: getDefaultExpenseTargets(),
+            annualGoals: { [new Date().getFullYear()]: { revenue: 0, expense: 0 } },
+            isArchived: false,
+        };
+
+        // 2. Create cash accounts with the new project ID
+        const newAccounts = accounts.map(acc => ({ ...acc, id: uuidv4(), projectId: newProject.id }));
+
+        // 3. Create budget entries and corresponding actuals from onboarding entries
+        const newEntries = [];
+        const newActuals = [];
+        const newTiers = [...state.tiers];
+
+        entries.forEach(entry => {
+            const entryId = uuidv4();
+            const isRevenue = entry.type === 'revenu';
+            const defaultCategory = isRevenue 
+                ? state.categories.revenue[0].subCategories[0].name // Ventes de produits
+                : state.categories.expense[0].subCategories[0].name; // Loyer et charges
+
+            const tierName = entry.supplier?.trim();
+            if (tierName) {
+                const tierType = isRevenue ? 'client' : 'fournisseur';
+                if (!newTiers.some(t => t.name.toLowerCase() === tierName.toLowerCase() && t.type === tierType)) {
+                    newTiers.push({ name: tierName, type: tierType, id: uuidv4() });
+                }
+            }
+
+            const budgetEntry = {
+                id: entryId,
+                type: entry.type,
+                category: defaultCategory,
+                frequency: entry.frequency,
+                amount: parseFloat(entry.amount),
+                date: new Date().toISOString().split('T')[0],
+                startDate: new Date().toISOString().split('T')[0],
+                endDate: null,
+                supplier: entry.supplier,
+                description: entry.description,
+            };
+            newEntries.push(budgetEntry);
+
+            const actualType = isRevenue ? 'receivable' : 'payable';
+            const entryStartDate = new Date(budgetEntry.startDate);
+            const horizonEndDate = new Date();
+            horizonEndDate.setFullYear(horizonEndDate.getFullYear() + 5);
+            let currentDate = new Date(entryStartDate);
+
+            while (currentDate <= horizonEndDate) {
+                let isValidDate = false;
+                let nextDate = new Date(currentDate);
+
+                switch (budgetEntry.frequency) {
+                    case 'journalier':
+                        isValidDate = true;
+                        nextDate.setDate(nextDate.getDate() + 1);
+                        break;
+                    case 'hebdomadaire':
+                        isValidDate = true;
+                        nextDate.setDate(nextDate.getDate() + 7);
+                        break;
+                    case 'mensuel':
+                        isValidDate = true;
+                        nextDate.setMonth(nextDate.getMonth() + 1);
+                        break;
+                    case 'bimestriel':
+                        isValidDate = true;
+                        nextDate.setMonth(nextDate.getMonth() + 2);
+                        break;
+                    case 'trimestriel':
+                        isValidDate = true;
+                        nextDate.setMonth(nextDate.getMonth() + 3);
+                        break;
+                    case 'semestriel':
+                        isValidDate = true;
+                        nextDate.setMonth(nextDate.getMonth() + 6);
+                        break;
+                    case 'annuel':
+                        isValidDate = true;
+                        nextDate.setFullYear(nextDate.getFullYear() + 1);
+                        break;
+                    default:
+                        nextDate.setFullYear(nextDate.getFullYear() + 100);
+                }
+
+                if (isValidDate) {
+                    newActuals.push({
+                        id: uuidv4(),
+                        budgetId: entryId,
+                        projectId: newProject.id,
+                        type: actualType,
+                        category: budgetEntry.category,
+                        date: new Date(currentDate).toISOString().split('T')[0],
+                        amount: budgetEntry.amount,
+                        thirdParty: budgetEntry.supplier,
+                        description: `Budget: ${budgetEntry.description}`,
+                        status: 'pending',
+                        payments: []
+                    });
+                }
+                currentDate = nextDate;
+            }
+        });
+
+        return {
+            ...state,
+            projects: [newProject],
+            userCashAccounts: newAccounts,
+            allEntries: { [newProject.id]: newEntries },
+            allActuals: { [newProject.id]: newActuals },
+            tiers: newTiers,
+            settings: { ...state.settings, ...settings },
+            activeProjectId: newProject.id,
+            currentView: 'dashboard',
+        };
+    }
     case 'SET_CURRENT_VIEW':
       return { ...state, currentView: action.payload };
     case 'SET_ACTIVE_PROJECT': {
@@ -208,12 +335,22 @@ const budgetReducer = (state, action) => {
         annualGoals: { [new Date().getFullYear()]: { revenue: 0, expense: 0 } },
         isArchived: false,
       };
+      const newCashAccount = {
+        id: uuidv4(),
+        mainCategoryId: 'cash',
+        name: `Caisse en espèce`,
+        initialBalance: 0,
+        initialBalanceDate: new Date().toISOString().split('T')[0],
+        projectId: newProject.id,
+      };
       return {
         ...state,
         projects: [...state.projects, newProject],
+        userCashAccounts: [...state.userCashAccounts, newCashAccount],
         allEntries: { ...state.allEntries, [newProject.id]: [] },
         allActuals: { ...state.allActuals, [newProject.id]: [] },
         activeProjectId: newProject.id,
+        currentView: 'dashboard',
       };
     }
     case 'UPDATE_PROJECT': {
@@ -263,16 +400,13 @@ const budgetReducer = (state, action) => {
     }
     case 'DELETE_PROJECT': {
       const projectId = action.payload;
-      if (state.projects.filter(p => !p.isArchived).length <= 1) {
-        alert("Vous ne pouvez pas supprimer le dernier projet actif.");
-        return state;
-      }
       if (window.confirm("Êtes-vous sûr de vouloir supprimer ce projet et toutes ses données ? Cette action est irréversible. Pour conserver les données, vous pouvez l'archiver.")) {
         const remainingProjects = state.projects.filter(p => p.id !== projectId);
         const newEntries = { ...state.allEntries };
         delete newEntries[projectId];
         const newActuals = { ...state.allActuals };
         delete newActuals[projectId];
+        const remainingCashAccounts = state.userCashAccounts.filter(acc => acc.projectId !== projectId);
         const newScenarios = state.scenarios.filter(s => s.projectId !== projectId);
         const newScenarioEntries = { ...state.scenarioEntries };
         state.scenarios.forEach(s => {
@@ -284,11 +418,12 @@ const budgetReducer = (state, action) => {
         return {
           ...state,
           projects: remainingProjects,
+          userCashAccounts: remainingCashAccounts,
           allEntries: newEntries,
           allActuals: newActuals,
           scenarios: newScenarios,
           scenarioEntries: newScenarioEntries,
-          activeProjectId: CONSOLIDATED_PROJECT_ID,
+          activeProjectId: remainingProjects.length > 0 ? CONSOLIDATED_PROJECT_ID : null,
         };
       }
       return state;
@@ -410,7 +545,15 @@ const budgetReducer = (state, action) => {
     }
 
     case 'ADD_USER_CASH_ACCOUNT': {
-      const newAccount = { ...action.payload, id: uuidv4() };
+      const { mainCategoryId, name, initialBalance, initialBalanceDate, projectId } = action.payload;
+      const newAccount = { 
+        id: uuidv4(), 
+        mainCategoryId, 
+        name, 
+        initialBalance, 
+        initialBalanceDate, 
+        projectId 
+      };
       return { ...state, userCashAccounts: [...state.userCashAccounts, newAccount] };
     }
     case 'UPDATE_USER_CASH_ACCOUNT': {
@@ -480,13 +623,44 @@ const budgetReducer = (state, action) => {
         );
 
         if (finalEntryData.type === 'depense' || finalEntryData.type === 'revenu') {
-            const newActualsList = [];
+            const newGeneratedActuals = [];
             const actualType = finalEntryData.type === 'depense' ? 'payable' : 'receivable';
             
-            if (finalEntryData.frequency === 'provision') {
-                // Create monthly provision actuals
+            if (finalEntryData.frequency === 'ponctuel') {
+                newGeneratedActuals.push({
+                    id: uuidv4(),
+                    budgetId: finalEntryData.id,
+                    projectId: targetProjectId,
+                    type: actualType,
+                    category: finalEntryData.category,
+                    date: finalEntryData.date,
+                    amount: finalEntryData.amount,
+                    thirdParty: finalEntryData.supplier,
+                    description: `Budget: ${finalEntryData.description || finalEntryData.category}`,
+                    status: 'pending',
+                    payments: []
+                });
+            } else if (finalEntryData.frequency === 'irregulier') {
                 finalEntryData.payments.forEach(payment => {
-                    newActualsList.push({
+                    if (payment.date && payment.amount) {
+                        newGeneratedActuals.push({
+                            id: uuidv4(),
+                            budgetId: finalEntryData.id,
+                            projectId: targetProjectId,
+                            type: actualType,
+                            category: finalEntryData.category,
+                            date: payment.date,
+                            amount: parseFloat(payment.amount),
+                            thirdParty: finalEntryData.supplier,
+                            description: `Budget (irrégulier): ${finalEntryData.description || finalEntryData.category}`,
+                            status: 'pending',
+                            payments: []
+                        });
+                    }
+                });
+            } else if (finalEntryData.frequency === 'provision') {
+                finalEntryData.payments.forEach(payment => {
+                    newGeneratedActuals.push({
                         id: uuidv4(),
                         budgetId: finalEntryData.id,
                         projectId: targetProjectId,
@@ -506,8 +680,7 @@ const budgetReducer = (state, action) => {
                         }
                     });
                 });
-                // Create final payable actual
-                newActualsList.push({
+                newGeneratedActuals.push({
                     id: uuidv4(),
                     budgetId: finalEntryData.id,
                     projectId: targetProjectId,
@@ -519,43 +692,77 @@ const budgetReducer = (state, action) => {
                     description: `Paiement final pour: ${finalEntryData.description}`,
                     status: 'pending',
                     payments: [],
-isFinalProvisionPayment: true,
+                    isFinalProvisionPayment: true,
                     provisionDetails: finalEntryData.provisionDetails
                 });
+            } else { // Periodic frequencies
+                const entryStartDate = new Date(finalEntryData.startDate);
+                const horizonEndDate = new Date();
+                horizonEndDate.setFullYear(horizonEndDate.getFullYear() + 5);
+                const entryEndDate = finalEntryData.endDate ? new Date(finalEntryData.endDate) : horizonEndDate;
+                entryEndDate.setHours(23, 59, 59, 999);
 
-            } else {
-                const startYear = finalEntryData.startDate ? new Date(finalEntryData.startDate).getFullYear() : new Date().getFullYear();
-                const endYear = finalEntryData.endDate ? new Date(finalEntryData.endDate).getFullYear() : startYear + 5;
+                let currentDate = new Date(entryStartDate);
 
-                for (let year = startYear; year <= endYear; year++) {
-                    for (let monthIndex = 0; monthIndex < 12; monthIndex++) {
-                        const amountForMonth = getEntryAmountForMonth(finalEntryData, monthIndex, year);
-                        if (amountForMonth > 0) {
-                            const actualExists = projectActuals.some(p => 
-                                p.budgetId === finalEntryData.id && 
-                                new Date(p.date).getFullYear() === year &&
-                                new Date(p.date).getMonth() === monthIndex
-                            );
-                            if (!actualExists) {
-                                newActualsList.push({
-                                    id: uuidv4(),
-                                    budgetId: finalEntryData.id,
-                                    projectId: targetProjectId,
-                                    type: actualType,
-                                    category: finalEntryData.category,
-                                    date: new Date(year, monthIndex, 1).toISOString().split('T')[0],
-                                    amount: amountForMonth,
-                                    thirdParty: finalEntryData.supplier,
-                                    description: `Budget: ${finalEntryData.description || finalEntryData.category}`,
-                                    status: 'pending',
-                                    payments: []
-                                });
+                while (currentDate <= entryEndDate) {
+                    let isValidDate = false;
+                    let nextDate = new Date(currentDate);
+
+                    switch (finalEntryData.frequency) {
+                        case 'journalier':
+                            const daysToCount = finalEntryData.daysOfWeek && Array.isArray(finalEntryData.daysOfWeek) && finalEntryData.daysOfWeek.length > 0 ? finalEntryData.daysOfWeek : [0, 1, 2, 3, 4, 5, 6];
+                            if (daysToCount.includes(currentDate.getDay())) {
+                               isValidDate = true;
                             }
-                        }
+                            nextDate.setDate(nextDate.getDate() + 1);
+                            break;
+                        case 'hebdomadaire':
+                            isValidDate = true;
+                            nextDate.setDate(nextDate.getDate() + 7);
+                            break;
+                        case 'mensuel':
+                            isValidDate = true;
+                            nextDate.setMonth(nextDate.getMonth() + 1);
+                            break;
+                        case 'bimestriel':
+                            isValidDate = true;
+                            nextDate.setMonth(nextDate.getMonth() + 2);
+                            break;
+                        case 'trimestriel':
+                            isValidDate = true;
+                            nextDate.setMonth(nextDate.getMonth() + 3);
+                            break;
+                        case 'semestriel':
+                            isValidDate = true;
+                            nextDate.setMonth(nextDate.getMonth() + 6);
+                            break;
+                        case 'annuel':
+                            isValidDate = true;
+                            nextDate.setFullYear(nextDate.getFullYear() + 1);
+                            break;
+                        default:
+                            nextDate.setFullYear(nextDate.getFullYear() + 100);
                     }
+
+                    if (isValidDate) {
+                        newGeneratedActuals.push({
+                            id: uuidv4(),
+                            budgetId: finalEntryData.id,
+                            projectId: targetProjectId,
+                            type: actualType,
+                            category: finalEntryData.category,
+                            date: new Date(currentDate).toISOString().split('T')[0],
+                            amount: finalEntryData.amount,
+                            thirdParty: finalEntryData.supplier,
+                            description: `Budget: ${finalEntryData.description || finalEntryData.category}`,
+                            status: 'pending',
+                            payments: []
+                        });
+                    }
+                    currentDate = nextDate;
                 }
             }
-            projectActuals = [...projectActuals, ...newActualsList];
+            projectActuals.push(...newGeneratedActuals);
         }
         newAllActuals[targetProjectId] = projectActuals;
 
@@ -742,6 +949,10 @@ const loadInitialState = () => {
         if (savedState) {
             const parsedState = JSON.parse(savedState);
             
+            if (parsedState.projects && parsedState.projects.length === 0) {
+              return { ...parsedState, projects: [] };
+            }
+
             if (parsedState.categories && parsedState.categories.revenue) {
                 const nameMapping = {
                     'Revenus des Ventes': 'Entrées des Ventes',
@@ -773,10 +984,16 @@ const loadInitialState = () => {
                     if (!exists) parsedState.categories.expense.push(initialCat);
                 });
             }
-
+            
             if (!parsedState.userCashAccounts || !Array.isArray(parsedState.userCashAccounts)) {
                 parsedState.userCashAccounts = initialUserCashAccounts;
             } else {
+                const defaultProjectId = parsedState.projects?.[0]?.id || 'proj-1';
+                parsedState.userCashAccounts.forEach(acc => {
+                    if (!acc.projectId) {
+                        acc.projectId = defaultProjectId;
+                    }
+                });
                 const migrationMapping = {
                     'proCurrent': 'bank',
                     'persoCurrent': 'bank',
@@ -803,6 +1020,21 @@ const loadInitialState = () => {
                     if (p.isArchived === undefined) p.isArchived = false;
                     delete p.currency;
                 });
+                
+                if (!parsedState.userCashAccounts) parsedState.userCashAccounts = [];
+                parsedState.projects.forEach(project => {
+                  const hasAccount = parsedState.userCashAccounts.some(acc => acc.projectId === project.id);
+                  if (!hasAccount) {
+                    parsedState.userCashAccounts.push({
+                      id: uuidv4(),
+                      mainCategoryId: 'cash',
+                      name: `Caisse en espèce - ${project.name}`,
+                      initialBalance: 0,
+                      initialBalanceDate: new Date().toISOString().split('T')[0],
+                      projectId: project.id,
+                    });
+                  }
+                });
             }
             
             if (!parsedState.currentView) {
@@ -824,6 +1056,7 @@ const loadInitialState = () => {
             delete parsedState.users;
             delete parsedState.permissions;
             delete parsedState.isAuthenticated;
+            delete parsedState.needsInitialSetup; // Remove obsolete property
 
             return {
               ...parsedState,
@@ -846,7 +1079,7 @@ const loadInitialState = () => {
         scenarios: initialScenarios,
         scenarioEntries: initialScenarioEntries,
         infoModal: { isOpen: false, title: '', message: '' },
-        activeProjectId: initialProjects[0]?.id,
+        activeProjectId: initialProjects.length > 0 ? initialProjects[0]?.id : null,
         currentView: 'dashboard',
         displayYear: new Date().getFullYear(),
         activeSettingsDrawer: null,

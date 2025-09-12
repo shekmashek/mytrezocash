@@ -6,15 +6,21 @@ import { LayoutDashboard, Wallet, Landmark, PiggyBank, FileWarning, HandCoins } 
 const DashboardView = () => {
   const { state } = useBudget();
   const { activeProjectId, projects, allActuals, userCashAccounts, settings } = state;
+  
+  const isConsolidated = activeProjectId === 'consolidated';
 
   const relevantActuals = useMemo(() => {
-    return activeProjectId === 'consolidated'
+    return isConsolidated
       ? Object.values(allActuals).flat()
       : allActuals[activeProjectId] || [];
-  }, [activeProjectId, allActuals]);
+  }, [activeProjectId, allActuals, isConsolidated]);
 
   const accountBalances = useMemo(() => {
-    return userCashAccounts.map(account => {
+    const accountsForProject = isConsolidated
+      ? userCashAccounts
+      : userCashAccounts.filter(acc => acc.projectId === activeProjectId);
+
+    return accountsForProject.map(account => {
       let currentBalance = parseFloat(account.initialBalance) || 0;
       const accountPayments = relevantActuals
         .flatMap(actual => (actual.payments || []).filter(p => p.cashAccount === account.id).map(p => ({ ...p, type: actual.type })));
@@ -36,7 +42,7 @@ const DashboardView = () => {
 
       return { id: account.id, name: account.name, balance: currentBalance, blockedForProvision, actionableBalance: currentBalance - blockedForProvision };
     });
-  }, [userCashAccounts, relevantActuals]);
+  }, [userCashAccounts, relevantActuals, isConsolidated, activeProjectId]);
 
   const inProgressProvisions = useMemo(() => {
     const finalPaymentEntries = relevantActuals.filter(

@@ -78,7 +78,7 @@ const Header = ({ isCollapsed, onToggleCollapse, onOpenSettingsDrawer }) => {
 
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, disabled: false },
-    { id: 'budget', label: 'Budget', icon: Table, disabled: false },
+    { id: 'budget', label: 'Trésorerie', icon: Table, disabled: false },
     { id: 'payables', label: 'Sorties', icon: ArrowDownUp, disabled: isConsolidated },
     { id: 'receivables', label: 'Entrées', icon: HandCoins, disabled: isConsolidated },
     { id: 'expenseAnalysis', label: 'Analyse Sorties', icon: PieChart, disabled: false },

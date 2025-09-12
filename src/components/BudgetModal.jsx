@@ -1,12 +1,12 @@
-import React, { useState, useEffect } from 'react';
-import { X, Calendar, User, Building, Trash2, Edit, Clock, Repeat, AlertCircle, ListChecks, PlusCircle, PiggyBank } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { X, Calendar, User, Building, Trash2, Edit, Clock, Repeat, AlertCircle, ListChecks, PlusCircle, PiggyBank, Save } from 'lucide-react';
 import { formatCurrency } from '../utils/formatting';
 import AddCategoryModal from './AddCategoryModal';
 import { useBudget } from '../context/BudgetContext';
 
 const BudgetModal = ({ isOpen, onClose, onSave, onDelete, editingData }) => {
   const { state, dispatch } = useBudget();
-  const { categories, tiers, settings, userCashAccounts } = state;
+  const { categories, tiers, settings, userCashAccounts, activeProjectId } = state;
 
   const isEditing = editingData && editingData.id;
   const isAdding = editingData && !editingData.id;
@@ -33,6 +33,7 @@ const BudgetModal = ({ isOpen, onClose, onSave, onDelete, editingData }) => {
   });
 
   const [formData, setFormData] = useState(getInitialFormData(entryType));
+  const [selectedMainCategoryId, setSelectedMainCategoryId] = useState('');
   const [isAddCategoryModalOpen, setIsAddCategoryModalOpen] = useState(false);
 
   const mainFrequencyTypes = [
@@ -47,6 +48,7 @@ const BudgetModal = ({ isOpen, onClose, onSave, onDelete, editingData }) => {
     { value: 'mensuel', label: 'Mensuel' },
     { value: 'bimestriel', label: 'Bimestriel' },
     { value: 'trimestriel', label: 'Trimestriel' },
+    { value: 'semestriel', label: 'Semestriel' },
     { value: 'annuel', label: 'Annuel' },
   ];
   
@@ -63,6 +65,10 @@ const BudgetModal = ({ isOpen, onClose, onSave, onDelete, editingData }) => {
   const periodicFrequencies = periodicOptions.map(opt => opt.value);
   const mainFrequencyType = periodicFrequencies.includes(formData.frequency) ? 'periodique' : formData.frequency;
 
+  const projectCashAccounts = useMemo(() => {
+    return userCashAccounts.filter(acc => acc.projectId === activeProjectId);
+  }, [userCashAccounts, activeProjectId]);
+
   useEffect(() => {
     if (isOpen) {
       if (editingData) {
@@ -72,6 +78,16 @@ const BudgetModal = ({ isOpen, onClose, onSave, onDelete, editingData }) => {
         
         const initialType = editingData.type || typeFromCategory || 'revenu';
         const initialFrequency = editingData.frequency || 'ponctuel';
+
+        let initialMainCatId = '';
+        if (editingData.category) {
+          const allCats = initialType === 'revenu' ? categories.revenue : categories.expense;
+          const mainCat = allCats.find(mc => mc.subCategories.some(sc => sc.name === editingData.category));
+          if (mainCat) {
+            initialMainCatId = mainCat.id;
+          }
+        }
+        setSelectedMainCategoryId(initialMainCatId);
 
         setFormData({
           ...getInitialFormData(initialType),
@@ -84,9 +100,10 @@ const BudgetModal = ({ isOpen, onClose, onSave, onDelete, editingData }) => {
         });
       } else {
         setFormData(getInitialFormData(entryType));
+        setSelectedMainCategoryId('');
       }
     }
-  }, [editingData, isOpen, categories.revenue, entryType]);
+  }, [editingData, isOpen, categories.revenue, categories.expense, entryType]);
   
   useEffect(() => {
     if (formData.frequency === 'provision') {
@@ -188,6 +205,7 @@ const BudgetModal = ({ isOpen, onClose, onSave, onDelete, editingData }) => {
       case 'mensuel': return `${formattedAmount} chaque mois`;
       case 'bimestriel': return `${formattedAmount} tous les 2 mois`;
       case 'trimestriel': return `${formattedAmount} tous les 3 mois`;
+      case 'semestriel': return `${formattedAmount} tous les 6 mois`;
       case 'annuel': return `${formattedAmount} chaque année`;
       case 'ponctuel': return `${formattedAmount} une seule fois`;
       default: return '';
@@ -237,13 +255,46 @@ const BudgetModal = ({ isOpen, onClose, onSave, onDelete, editingData }) => {
                 </div>
               </div>
             )}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Catégorie *</label>
-              <select value={formData.category} onChange={handleCategoryChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" required>
-                <option value="">Sélectionner une catégorie</option>
-                {getAvailableCategories().map(mainCat => (<optgroup key={mainCat.id} label={mainCat.name}>{mainCat.subCategories.map(subCat => (<option key={subCat.id} value={subCat.name}>{subCat.name}</option>))}</optgroup>))}
-                <option value="add_new_category" className="font-bold text-blue-600">-- Ajouter une nouvelle catégorie --</option>
-              </select>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Catégorie Principale *</label>
+                <select
+                  value={selectedMainCategoryId}
+                  onChange={(e) => {
+                    setSelectedMainCategoryId(e.target.value);
+                    setFormData(prev => ({ ...prev, category: '' }));
+                  }}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  required
+                >
+                  <option value="">Sélectionner...</option>
+                  {getAvailableCategories().map(mainCat => (
+                    <option key={mainCat.id} value={mainCat.id}>{mainCat.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Sous-catégorie *</label>
+                <select
+                  value={formData.category}
+                  onChange={handleCategoryChange}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  required
+                  disabled={!selectedMainCategoryId}
+                >
+                  <option value="">Sélectionner...</option>
+                  {selectedMainCategoryId &&
+                    getAvailableCategories()
+                      .find(mc => mc.id === selectedMainCategoryId)
+                      ?.subCategories.map(subCat => (
+                        <option key={subCat.id} value={subCat.name}>{subCat.name}</option>
+                      ))
+                  }
+                  {selectedMainCategoryId &&
+                    <option value="add_new_category" className="font-bold text-blue-600">-- Ajouter une nouvelle sous-catégorie --</option>
+                  }
+                </select>
+              </div>
             </div>
             
             <div>
@@ -311,7 +362,7 @@ const BudgetModal = ({ isOpen, onClose, onSave, onDelete, editingData }) => {
                     <label className="block text-sm font-medium text-gray-700 mb-2">Compte de provision *</label>
                     <select value={formData.provisionDetails.provisionAccountId} onChange={e => setFormData(prev => ({ ...prev, provisionDetails: { ...prev.provisionDetails, provisionAccountId: e.target.value } }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg" required>
                       <option value="">Sélectionner un compte</option>
-                      {userCashAccounts.map(acc => <option key={acc.id} value={acc.id}>{acc.name}</option>)}
+                      {projectCashAccounts.map(acc => <option key={acc.id} value={acc.id}>{acc.name}</option>)}
                     </select>
                   </div>
                 </div>
@@ -341,12 +392,12 @@ const BudgetModal = ({ isOpen, onClose, onSave, onDelete, editingData }) => {
             
             <div className="flex justify-between items-center pt-4 border-t">
               <div>{editingData && (<button type="button" onClick={handleDeleteClick} className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg font-medium flex items-center gap-2 transition-colors"><Trash2 className="w-4 h-4" /> Supprimer</button>)}</div>
-              <div className="flex gap-3"><button type="button" onClick={onClose} className="px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg font-medium">Annuler</button><button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg font-medium flex items-center gap-2"><Edit className="w-4 h-4" /> {editingData ? 'Modifier' : 'Enregistrer'}</button></div>
+              <div className="flex gap-3"><button type="button" onClick={onClose} className="px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg font-medium">Annuler</button><button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg font-medium flex items-center gap-2"><Save className="w-4 h-4" /> {isEditing ? 'Modifier' : 'Ajouter'}</button></div>
             </div>
           </form>
         </div>
       </div>
-      {isAddCategoryModalOpen && (<AddCategoryModal isOpen={isAddCategoryModalOpen} onClose={() => setIsAddCategoryModalOpen(false)} onSave={handleSaveNewCategory} availableCategories={getAvailableCategories()} type={formData.type} />)}
+      {isAddCategoryModalOpen && (<AddCategoryModal isOpen={isAddCategoryModalOpen} onClose={() => setIsAddCategoryModalOpen(false)} onSave={handleSaveNewCategory} availableCategories={getAvailableCategories()} type={formData.type} initialMainCategoryId={selectedMainCategoryId} />)}
     </>
   );
 };

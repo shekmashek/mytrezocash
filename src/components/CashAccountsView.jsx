@@ -6,10 +6,17 @@ import { mainCashAccountCategories } from '../context/BudgetContext';
 
 const CashAccountsView = () => {
   const { state, dispatch } = useBudget();
-  const { userCashAccounts, settings, allActuals } = state;
+  const { userCashAccounts, settings, allActuals, activeProjectId } = state;
 
   const [editingAccount, setEditingAccount] = useState(null);
   const [newAccountData, setNewAccountData] = useState({});
+  
+  const isConsolidated = activeProjectId === 'consolidated';
+
+  const projectCashAccounts = useMemo(() => {
+    if (isConsolidated) return [];
+    return userCashAccounts.filter(acc => acc.projectId === activeProjectId);
+  }, [userCashAccounts, activeProjectId, isConsolidated]);
 
   const isAccountUsed = (accountId) => {
     return Object.values(allActuals).flat().flatMap(a => a.payments || []).some(p => p.cashAccount === accountId);
@@ -59,7 +66,8 @@ const CashAccountsView = () => {
         mainCategoryId,
         name: data.name.trim(),
         initialBalance: parseFloat(data.initialBalance) || 0,
-        initialBalanceDate: data.initialBalanceDate || new Date().toISOString().split('T')[0]
+        initialBalanceDate: data.initialBalanceDate || new Date().toISOString().split('T')[0],
+        projectId: activeProjectId,
       }
     });
     setNewAccountData(prev => ({ ...prev, [mainCategoryId]: undefined }));
@@ -78,6 +86,16 @@ const CashAccountsView = () => {
       }
     }));
   };
+  
+  if (isConsolidated) {
+    return (
+      <div className="p-6 text-center text-gray-500">
+        <Wallet className="w-12 h-12 mx-auto mb-4 text-gray-400" />
+        <h3 className="text-lg font-semibold">Gestion des Comptes</h3>
+        <p>La gestion des comptes de trésorerie se fait par projet. Veuillez sélectionner un projet spécifique pour ajouter ou modifier des comptes.</p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -85,7 +103,7 @@ const CashAccountsView = () => {
         <div key={mainCat.id} className="bg-white p-4 rounded-lg shadow-sm border">
           <h3 className="font-bold text-lg text-gray-700 mb-3">{mainCat.name}</h3>
           <ul className="divide-y divide-gray-200">
-            {userCashAccounts.filter(acc => acc.mainCategoryId === mainCat.id).map(account => (
+            {projectCashAccounts.filter(acc => acc.mainCategoryId === mainCat.id).map(account => (
               <li key={account.id} className="py-3">
                 {editingAccount?.id === account.id ? (
                   <div className="space-y-3">

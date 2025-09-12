@@ -12,6 +12,7 @@ import BudgetModal from './components/BudgetModal';
 import DashboardView from './components/DashboardView';
 import InfoModal from './components/InfoModal';
 import ActualEditorDrawer from './components/ActualEditorDrawer';
+import OnboardingView from './components/OnboardingView';
 
 function App() {
   const { state, dispatch } = useBudget();
@@ -20,6 +21,9 @@ function App() {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
   const { activeProject, activeEntries, activeActuals } = useMemo(() => {
+    if (state.projects.length === 0) {
+      return { activeProject: null, activeEntries: [], activeActuals: [] };
+    }
     const { projects, allEntries, allActuals } = state;
     const isConsolidated = activeProjectId === 'consolidated';
     if (isConsolidated) {
@@ -29,7 +33,7 @@ function App() {
         activeActuals: Object.entries(allActuals).flatMap(([projectId, actuals]) => actuals.map(actual => ({ ...actual, projectId }))),
       };
     } else {
-      const project = projects.find(p => p.id === activeProjectId) || projects[0];
+      const project = projects.find(p => p.id === activeProjectId) || projects.find(p => !p.isArchived);
       return {
         activeProject: project,
         activeEntries: project ? (allEntries[project.id] || []) : [],
@@ -37,6 +41,10 @@ function App() {
       };
     }
   }, [activeProjectId, state.projects, state.allEntries, state.allActuals]);
+
+  if (state.projects.length === 0) {
+    return <OnboardingView />;
+  }
 
   const onOpenSettingsDrawer = (drawer) => {
     dispatch({ type: 'SET_ACTIVE_SETTINGS_DRAWER', payload: drawer });

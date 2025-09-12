@@ -22,7 +22,11 @@ const SubHeader = () => {
   }, [activeProjectId, allActuals, isConsolidated]);
 
   const accountBalances = useMemo(() => {
-    return userCashAccounts.map(account => {
+    const accountsForProject = isConsolidated 
+      ? userCashAccounts 
+      : userCashAccounts.filter(acc => acc.projectId === activeProjectId);
+
+    return accountsForProject.map(account => {
       let currentBalance = parseFloat(account.initialBalance) || 0;
       const accountPayments = relevantActuals
         .flatMap(actual => (actual.payments || []).filter(p => p.cashAccount === account.id).map(p => ({ ...p, type: actual.type })));
@@ -51,7 +55,7 @@ const SubHeader = () => {
         actionableBalance: currentBalance - blockedForProvision 
       };
     });
-  }, [userCashAccounts, relevantActuals]);
+  }, [userCashAccounts, relevantActuals, isConsolidated, activeProjectId]);
 
   const balancesByGroup = useMemo(() => {
     const grouped = mainCashAccountCategories.reduce((acc, cat) => {
@@ -65,8 +69,12 @@ const SubHeader = () => {
         }
     });
 
-    return Object.values(grouped).filter(g => g.balance > 0 || userCashAccounts.some(acc => acc.mainCategoryId === g.id));
-  }, [accountBalances, userCashAccounts]);
+    const accountsToShow = isConsolidated 
+        ? userCashAccounts 
+        : userCashAccounts.filter(acc => acc.projectId === activeProjectId);
+
+    return Object.values(grouped).filter(g => g.balance > 0 || accountsToShow.some(acc => acc.mainCategoryId === g.id));
+  }, [accountBalances, userCashAccounts, isConsolidated, activeProjectId]);
   
   const handleYearChange = (newYear) => {
     dispatch({ type: 'SET_DISPLAY_YEAR', payload: newYear });

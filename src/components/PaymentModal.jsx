@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { X, DollarSign, Check } from 'lucide-react';
 import { formatCurrency } from '../utils/formatting';
 import { useBudget } from '../context/BudgetContext';
@@ -15,13 +15,18 @@ const PaymentModal = ({ isOpen, onClose, onSave, actualToPay, type }) => {
   const totalPaid = (actualToPay.payments || []).reduce((sum, p) => sum + p.paidAmount, 0);
   const remainingAmount = totalDue - totalPaid;
 
+  const projectCashAccounts = useMemo(() => {
+    if (!actualToPay || !actualToPay.projectId) return [];
+    return userCashAccounts.filter(acc => acc.projectId === actualToPay.projectId);
+  }, [userCashAccounts, actualToPay]);
+
   useEffect(() => {
     if (isOpen) {
       setPaymentDate(new Date().toISOString().split('T')[0]);
       setPaidAmount(remainingAmount.toFixed(2));
-      setCashAccount(userCashAccounts.length > 0 ? userCashAccounts[0].id : '');
+      setCashAccount(projectCashAccounts.length > 0 ? projectCashAccounts[0].id : '');
     }
-  }, [isOpen, remainingAmount, userCashAccounts]);
+  }, [isOpen, remainingAmount, projectCashAccounts]);
 
   const handleSubmit = (isFinalPayment) => {
     const amount = parseFloat(paidAmount);
@@ -49,7 +54,7 @@ const PaymentModal = ({ isOpen, onClose, onSave, actualToPay, type }) => {
           <div className="space-y-4">
             <div><label className="block text-sm font-medium text-gray-700 mb-2">{dateLabel}</label><input type="date" value={paymentDate} onChange={(e) => setPaymentDate(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" required /></div>
             <div><label className="block text-sm font-medium text-gray-700 mb-2">{amountLabel}</label><input type="number" value={paidAmount} onChange={(e) => setPaidAmount(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" required step="0.01" min="0.01" /></div>
-            <div><label className="block text-sm font-medium text-gray-700 mb-2">Compte de trésorerie *</label><select value={cashAccount} onChange={(e) => setCashAccount(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg"><option value="">Sélectionner un compte</option>{userCashAccounts.map(acc => <option key={acc.id} value={acc.id}>{acc.name}</option>)}</select></div>
+            <div><label className="block text-sm font-medium text-gray-700 mb-2">Compte de trésorerie *</label><select value={cashAccount} onChange={(e) => setCashAccount(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg"><option value="">Sélectionner un compte</option>{projectCashAccounts.map(acc => <option key={acc.id} value={acc.id}>{acc.name}</option>)}</select></div>
           </div>
           <div className="flex justify-end gap-3 mt-6 pt-4 border-t"><button type="button" onClick={onClose} className="px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg font-medium">Annuler</button><button type="button" onClick={() => handleSubmit(false)} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium flex items-center gap-2"><DollarSign className="w-4 h-4" /> {partialButtonText}</button><button type="button" onClick={() => handleSubmit(true)} className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-medium flex items-center gap-2"><Check className="w-4 h-4" /> {finalButtonText}</button></div>
         </div>

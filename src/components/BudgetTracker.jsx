@@ -1,7 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Plus, Edit, Eye, Search, Gem, Info, Table, LogIn, Flag, ChevronDown, User, Folder, TrendingUp, TrendingDown, Target, AreaChart, Layers } from 'lucide-react';
 import ReactECharts from 'echarts-for-react';
-import TransactionDetailDrawer from './TransactionDetailDrawer';
 import CashflowDetailDrawer from './CashflowDetailDrawer';
 import ResizableTh from './ResizableTh';
 import { getEntryAmountForMonth } from '../utils/budgetCalculations';
@@ -22,7 +21,6 @@ const BudgetTracker = ({ activeProject, budgetEntries, actualTransactions }) => 
     netResultRow: false,
     cumulativeNetResultRow: false,
   });
-  const [drawerData, setDrawerData] = useState({ isOpen: false, transactions: [], title: '' });
   const [collapsedItems, setCollapsedItems] = useState({});
   const [isEntreesCollapsed, setIsEntreesCollapsed] = useState(false);
   const [isSortiesCollapsed, setIsSortiesCollapsed] = useState(false);
@@ -57,7 +55,13 @@ const BudgetTracker = ({ activeProject, budgetEntries, actualTransactions }) => 
     if (!searchTerm) return budgetEntries;
     return budgetEntries.filter(entry => entry.supplier.toLowerCase().includes(searchTerm.toLowerCase()));
   }, [budgetEntries, searchTerm]);
-  const handleNewBudget = () => { if (!isConsolidated) { dispatch({ type: 'OPEN_BUDGET_MODAL', payload: null }); } };
+  
+  const handleNewEntry = (type) => {
+    if (!isConsolidated) {
+      dispatch({ type: 'OPEN_BUDGET_MODAL', payload: { type } });
+    }
+  };
+
   const handleEditEntry = (entry) => { dispatch({ type: 'OPEN_BUDGET_MODAL', payload: entry }); };
   const formatDate = (dateString) => dateString ? new Date(dateString).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '';
   const getFrequencyTitle = (entry) => {
@@ -68,18 +72,29 @@ const BudgetTracker = ({ activeProject, budgetEntries, actualTransactions }) => 
     return `${freq} | ${period}`;
   };
   const getEcartColor = (ecart, isEntree) => ecart === 0 ? 'text-gray-600' : isEntree ? (ecart >= 0 ? 'text-green-600' : 'text-red-600') : (ecart > 0 ? 'text-red-600' : 'text-green-600');
+  
+  const handleEditActual = (entryId, monthIndex, year) => {
+    const actual = actualTransactions.find(t => 
+      t.budgetId === entryId && 
+      new Date(t.date).getFullYear() === year && 
+      new Date(t.date).getMonth() === monthIndex
+    );
+
+    if (actual) {
+      dispatch({ type: 'OPEN_ACTUAL_EDITOR_DRAWER', payload: actual.id });
+    } else {
+      console.warn("No corresponding actual found for this budget cell. This may happen if the budget entry was just created. Try refreshing.");
+    }
+  };
+
   const getActualAmountForEntry = (entryId, monthIndex, year) => {
     const entry = budgetEntries.find(e => e.id === entryId);
     if (!entry) return 0;
-    const linkedActuals = actualTransactions.filter(t => t.budgetId === entryId);
-    return linkedActuals.reduce((sum, actual) => {
-        const budgetDate = new Date(actual.date);
-        if (budgetDate.getFullYear() === year && budgetDate.getMonth() === monthIndex) {
-            return sum + (actual.payments || []).reduce((pSum, p) => pSum + p.paidAmount, 0);
-        }
-        return sum;
-    }, 0);
+    const relevantActual = actualTransactions.find(t => t.budgetId === entryId && new Date(t.date).getFullYear() === year && new Date(t.date).getMonth() === monthIndex);
+    if (!relevantActual) return 0;
+    return (relevantActual.payments || []).reduce((pSum, p) => pSum + p.paidAmount, 0);
   };
+  
   const isRowVisibleForYear = (entry, year) => {
     for (let monthIndex = 0; monthIndex < 12; monthIndex++) {
       if (getEntryAmountForMonth(entry, monthIndex, year) > 0 || getActualAmountForEntry(entry.id, monthIndex, year) > 0) return true;
@@ -88,6 +103,7 @@ const BudgetTracker = ({ activeProject, budgetEntries, actualTransactions }) => 
   };
   const hasOffBudgetRevenuesForYear = (year) => budgetEntries.some(e => e.isOffBudget && e.type === 'revenu' && isRowVisibleForYear(e, year));
   const hasOffBudgetExpensesForYear = (year) => budgetEntries.some(e => e.isOffBudget && e.type === 'depense' && isRowVisibleForYear(e, year));
+  
   const getPaymentsForCategoryAndMonth = (subCategoryName, monthIndex, year) => {
     let relevantActuals;
     if (subCategoryName === 'Sorties Hors Budget' || subCategoryName === 'Entrées Hors Budget') {
@@ -106,16 +122,12 @@ const BudgetTracker = ({ activeProject, budgetEntries, actualTransactions }) => 
     return relevantActuals.flatMap(t => (t.payments || []).map(p => ({ ...p, thirdParty: t.thirdParty, type: t.type })));
   };
   const getPaymentsForMainCategoryAndMonth = (mainCategory, monthIndex, year) => mainCategory.subCategories.flatMap(sc => getPaymentsForCategoryAndMonth(sc.name, monthIndex, year));
-  const handleActualClick = (context) => {
+  
+  const handleGeneralActualClick = (context) => {
     const { monthIndex, year } = context;
     let payments = [];
     let title = '';
-    if (context.entryId) {
-      const entry = budgetEntries.find(e => e.id === context.entryId);
-      const relevantActual = actualTransactions.find(t => t.budgetId === context.entryId && new Date(t.date).getFullYear() === year && new Date(t.date).getMonth() === monthIndex);
-      if (relevantActual?.payments) payments = relevantActual.payments.map(p => ({ ...p, thirdParty: relevantActual.thirdParty, type: relevantActual.type }));
-      title = `Détails pour ${entry.supplier}`;
-    } else if (context.mainCategory) {
+    if (context.mainCategory) {
         payments = getPaymentsForMainCategoryAndMonth(context.mainCategory, monthIndex, year);
         title = `Détails pour ${context.mainCategory.name}`;
     } else if (context.category === 'Sorties Hors Budget' || context.category === 'Entrées Hors Budget') {
@@ -139,9 +151,12 @@ const BudgetTracker = ({ activeProject, budgetEntries, actualTransactions }) => 
         title = 'Détails des Transactions';
       }
     }
-    if (payments.length > 0) setDrawerData({ isOpen: true, transactions: payments, title: `${title} - ${months[monthIndex]} ${year}` });
+    if (payments.length > 0) {
+      // This is a temporary solution to show details. The new drawer is for single entries.
+      alert(`Total de ${payments.length} paiements pour ${title} - ${months[monthIndex]} ${year}. Montant total: ${formatCurrency(payments.reduce((s,p)=>s+p.paidAmount,0), settings)}`);
+    }
   };
-  const handleCloseDrawer = () => setDrawerData({ isOpen: false, transactions: [], title: '' });
+
   const groupedData = useMemo(() => {
     const entriesToGroup = filteredBudgetEntries.filter(e => !e.isOffBudget);
     const groupByType = (type) => {
@@ -262,6 +277,7 @@ const BudgetTracker = ({ activeProject, budgetEntries, actualTransactions }) => 
     let initialDate;
     const pastPeriods = 2;
     switch (timeUnit) {
+        case 'day': initialDate = new Date(today); chartStartDate = new Date(initialDate); chartStartDate.setDate(chartStartDate.getDate() - pastPeriods * 1); break;
         case 'week': initialDate = getStartOfWeek(today); chartStartDate = new Date(initialDate); chartStartDate.setDate(chartStartDate.getDate() - pastPeriods * 7); break;
         case 'month': initialDate = new Date(today.getFullYear(), today.getMonth(), 1); chartStartDate = new Date(initialDate); chartStartDate.setMonth(chartStartDate.getMonth() - pastPeriods); break;
         case 'bimonthly': const bimonthStartMonth = Math.floor(today.getMonth() / 2) * 2; initialDate = new Date(today.getFullYear(), bimonthStartMonth, 1); chartStartDate = new Date(initialDate); chartStartDate.setMonth(chartStartDate.getMonth() - pastPeriods * 2); break;
@@ -273,6 +289,7 @@ const BudgetTracker = ({ activeProject, budgetEntries, actualTransactions }) => 
     for (let i = -pastPeriods; i < horizonLength - pastPeriods; i++) {
         const periodStart = new Date(initialDate);
         switch (timeUnit) {
+            case 'day': periodStart.setDate(periodStart.getDate() + i); break;
             case 'week': periodStart.setDate(periodStart.getDate() + i * 7); break;
             case 'month': periodStart.setMonth(periodStart.getMonth() + i); break;
             case 'bimonthly': periodStart.setMonth(periodStart.getMonth() + i * 2); break;
@@ -293,6 +310,7 @@ const BudgetTracker = ({ activeProject, budgetEntries, actualTransactions }) => 
     const periodFlows = periods.map(periodStart => {
       const periodEnd = new Date(periodStart);
       switch (timeUnit) {
+          case 'day': periodEnd.setDate(periodEnd.getDate() + 1); break;
           case 'week': periodEnd.setDate(periodEnd.getDate() + 7); break;
           case 'month': periodEnd.setMonth(periodEnd.getMonth() + 1); break;
           case 'bimonthly': periodEnd.setMonth(periodEnd.getMonth() + 2); break;
@@ -327,6 +345,7 @@ const BudgetTracker = ({ activeProject, budgetEntries, actualTransactions }) => 
         const year = p.toLocaleDateString('fr-FR', { year: '2-digit' });
         const months = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Juin', 'Juil', 'Août', 'Sep', 'Oct', 'Nov', 'Déc'];
         switch (timeUnit) {
+            case 'day': return p.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' });
             case 'week': return `Sem. du ${p.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })}`;
             case 'month': return p.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
             case 'bimonthly': const startMonthB = months[p.getMonth()]; const endMonthB = months[(p.getMonth() + 1) % 12]; return `Bim. ${startMonthB}-${endMonthB} '${year}`;
@@ -356,6 +375,7 @@ const BudgetTracker = ({ activeProject, budgetEntries, actualTransactions }) => 
     const periodStart = cashflowData.base.periods[periodIndex];
     const periodEnd = new Date(periodStart);
     switch (timeUnit) {
+        case 'day': periodEnd.setDate(periodEnd.getDate() + 1); break;
         case 'week': periodEnd.setDate(periodEnd.getDate() + 7); break;
         case 'month': periodEnd.setMonth(periodEnd.getMonth() + 1); break;
         case 'bimonthly': periodEnd.setMonth(periodEnd.getMonth() + 2); break;
@@ -392,11 +412,12 @@ const BudgetTracker = ({ activeProject, budgetEntries, actualTransactions }) => 
       { name: 'Solde de trésorerie', type: 'line', smooth: true, data: cashflowData.base.balance, symbolSize: 8, color: BASE_BALANCE_COLOR, lineStyle: { width: 3, shadowColor: 'rgba(0, 0, 0, 0.2)', shadowBlur: 10, shadowOffsetY: 5 }, emphasis: { focus: 'series', scale: 1.2 } },
       ...cashflowData.scenarios.map((scenario, index) => ({ name: scenario.name, type: 'line', smooth: true, data: scenario.balance, symbolSize: 8, color: SCENARIO_COLORS[index % SCENARIO_COLORS.length], lineStyle: { width: 3, type: 'dashed', shadowColor: 'rgba(0, 0, 0, 0.1)', shadowBlur: 8, shadowOffsetY: 3 }, emphasis: { focus: 'series', scale: 1.2 } }))
     ];
+    const markLineData = timeUnit === 'day' ? [{ xAxis: 2, label: { show: true, formatter: 'Aujourd\'hui', position: 'insideStartTop', color: '#4a5568' } }] : [{ xAxis: 2, label: { show: true, formatter: 'Aujourd\'hui', position: 'insideStartTop', color: '#4a5568' } }];
     return {
       tooltip: { trigger: 'axis', axisPointer: { type: 'cross', label: { backgroundColor: '#2d3748' } }, backgroundColor: 'rgba(255, 255, 255, 0.95)', borderColor: '#e2e8f0', borderWidth: 1, borderRadius: 8, textStyle: { color: '#1a202c' }, padding: [10, 15], extraCssText: 'box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1); backdrop-filter: blur(4px);', formatter: (params) => { let tooltip = `${params[0].axisValue}<br/>`; params.forEach(param => { tooltip += `${param.marker} ${param.seriesName}: <strong>${formatCurrency(param.value, settings)}</strong><br/>`; }); return tooltip; } },
       legend: { data: series.map(s => s.name), bottom: 10, type: 'scroll', icon: 'circle' },
       grid: { left: '3%', right: '4%', bottom: '15%', containLabel: true },
-      xAxis: [{ type: 'category', boundaryGap: true, data: cashflowData.base.labels, axisLine: { show: false }, axisTick: { show: false }, splitLine: { show: false }, axisLabel: { color: '#4a5568' }, markLine: { symbol: 'none', silent: true, lineStyle: { type: 'dashed', color: '#9ca3af' }, data: [{ xAxis: 2, label: { show: true, formatter: 'Aujourd\'hui', position: 'insideStartTop', color: '#4a5568' } }] } }],
+      xAxis: [{ type: 'category', boundaryGap: true, data: cashflowData.base.labels, axisLine: { show: false }, axisTick: { show: false }, splitLine: { show: false }, axisLabel: { color: '#4a5568' }, markLine: { symbol: 'none', silent: true, lineStyle: { type: 'dashed', color: '#9ca3af' }, data: markLineData } }],
       yAxis: [{ type: 'value', axisLabel: { formatter: (value) => formatCurrency(value, { ...settings, displayUnit: 'standard' }), color: '#4a5568' }, splitLine: { lineStyle: { type: 'dashed', color: '#e2e8f0' } }, axisLine: { show: false } }],
       series,
       visualMap: [
@@ -407,7 +428,7 @@ const BudgetTracker = ({ activeProject, budgetEntries, actualTransactions }) => 
       animationEasingUpdate: 'cubicInOut',
     };
   };
-  const timeUnitOptions = { week: 'semaines', month: 'mois', bimonthly: 'bimestres', quarterly: 'trimestres', semiannually: 'semestres', annually: 'années' };
+  const timeUnitOptions = { day: 'jours', week: 'semaines', month: 'mois', bimonthly: 'bimestres', quarterly: 'trimestres', semiannually: 'semestres', annually: 'années' };
   // --- End of logic moved from CashflowView.jsx ---
 
   const renderBudgetRows = (type) => {
@@ -425,7 +446,7 @@ const BudgetTracker = ({ activeProject, budgetEntries, actualTransactions }) => 
           <td className="bg-white" style={{ width: `${separatorWidth}px` }}></td>
           {months.flatMap((_, monthIndex) => {
             const totals = calculateGeneralTotals(mainCategories, monthIndex, type);
-            return [<td key={monthIndex} className="px-2 py-2">{numVisibleCols > 0 && <div className="flex gap-2 justify-around text-sm font-bold">{visibleColumns.budget && <div className="flex-1 text-center text-gray-900">{formatCurrency(totals.budget, settings)}</div>}{visibleColumns.actual && <button onClick={(e) => { e.stopPropagation(); if (totals.actual > 0) handleActualClick({ type: type, monthIndex, year: displayYear }); }} disabled={totals.actual === 0} className="flex-1 text-center text-gray-900 hover:underline disabled:cursor-not-allowed disabled:opacity-60">{formatCurrency(totals.actual, settings)}</button>}{visibleColumns.ecart && <div className={`flex-1 text-center ${getEcartColor(totals.actual - totals.budget, type === 'entree')}`}>{formatCurrency(totals.actual - totals.budget, settings)}</div>}</div>}</td>, <td key={`${monthIndex}-sep`} className="bg-white" style={{ width: `${separatorWidth}px` }}></td>];
+            return [<td key={monthIndex} className="px-2 py-2">{numVisibleCols > 0 && <div className="flex gap-2 justify-around text-sm font-bold">{visibleColumns.budget && <div className="flex-1 text-center text-gray-900">{formatCurrency(totals.budget, settings)}</div>}{visibleColumns.actual && <button onClick={(e) => { e.stopPropagation(); if (totals.actual > 0) handleGeneralActualClick({ type: type, monthIndex, year: displayYear }); }} disabled={totals.actual === 0} className="flex-1 text-center text-gray-900 hover:underline disabled:cursor-not-allowed disabled:opacity-60">{formatCurrency(totals.actual, settings)}</button>}{visibleColumns.ecart && <div className={`flex-1 text-center ${getEcartColor(totals.actual - totals.budget, type === 'entree')}`}>{formatCurrency(totals.actual - totals.budget, settings)}</div>}</div>}</td>, <td key={`${monthIndex}-sep`} className="bg-white" style={{ width: `${separatorWidth}px` }}></td>];
           })}
         </tr>
         {!isCollapsed && (
@@ -442,21 +463,23 @@ const BudgetTracker = ({ activeProject, budgetEntries, actualTransactions }) => 
                       return [<td key={monthIndex} className="px-2 py-2">{numVisibleCols > 0 && <div className="flex gap-2 justify-around text-sm font-semibold">{visibleColumns.budget && <div className="flex-1 text-center">{formatCurrency(totals.budget, settings)}</div>}{visibleColumns.actual && <div className="flex-1 text-center">{formatCurrency(totals.actual, settings)}</div>}{visibleColumns.ecart && <div className={`flex-1 text-center ${getEcartColor(totals.ecart, type === 'entree')}`}>{formatCurrency(totals.ecart, settings)}</div>}</div>}</td>, <td key={`${monthIndex}-sep`} className="bg-white" style={{ width: `${separatorWidth}px` }}></td>];
                     })}
                   </tr>
-                  {!isMainCollapsed && mainCategory.entries.map((entry) => (
+                  {!isMainCollapsed && mainCategory.entries.map((entry) => {
+                    const isProvisionEntry = entry.frequency === 'provision';
+                    return (
                     <tr key={entry.id} className="border-b border-gray-100 hover:bg-gray-50">
                       <td className="pl-12 pr-4 py-1 font-normal text-gray-800 bg-white hover:bg-gray-50 sticky left-0 z-10" style={{ width: `${columnWidths.category}px` }}>{entry.category}</td>
                       <td className="px-4 py-1 text-gray-700 bg-white hover:bg-gray-50 sticky z-10" style={{ width: `${columnWidths.supplier}px`, left: `${supplierColLeft}px` }}><div className="flex items-center gap-2"><User className="w-4 h-4 text-blue-600" />{entry.supplier}</div></td>
                       {isConsolidated && (<td className="px-4 py-1 text-gray-700 bg-white hover:bg-gray-50 sticky z-10" style={{ width: `${columnWidths.project}px`, left: `${projectColLeft}px` }}><div className="flex items-center gap-2"><Folder className="w-4 h-4 text-gray-500" />{projects.find(p => p.id === entry.projectId)?.name || 'N/A'}</div></td>)}
-                      <td className="px-4 py-1 text-gray-600 bg-white hover:bg-gray-50 sticky z-10" style={{ width: `${columnWidths.description}px`, left: `${descriptionColLeft}px` }}><div className="flex items-center justify-between"><span className="text-sm truncate" title={getFrequencyTitle(entry)}>{entry.description || '-'}</span><button onClick={() => handleEditEntry(entry)} className="p-1 text-gray-400 hover:text-blue-600 transition-colors disabled:text-gray-300 disabled:cursor-not-allowed" disabled={isConsolidated}><Edit className="w-4 h-4" /></button></div></td>
+                      <td className="px-4 py-1 text-gray-600 bg-white hover:bg-gray-50 sticky z-10" style={{ width: `${columnWidths.description}px`, left: `${descriptionColLeft}px` }}><div className="flex items-center justify-between"><span className="text-sm truncate" title={getFrequencyTitle(entry)}>{entry.description || '-'}</span><button onClick={() => handleEditEntry(entry)} className="p-1 text-gray-400 hover:text-blue-600 transition-colors disabled:text-gray-300 disabled:cursor-not-allowed" disabled={isConsolidated || isProvisionEntry}><Edit className="w-4 h-4" /></button></div></td>
                       <td className="bg-white" style={{ width: `${separatorWidth}px` }}></td>
                       {months.flatMap((_, monthIndex) => {
                         const budget = getEntryAmountForMonth(entry, monthIndex, displayYear);
-                        const actual = getActualAmountForEntry(entry.id, monthIndex, displayYear);
-                        const isProvisionEntry = entry.frequency === 'provision';
-                        return [<td key={monthIndex} className="px-2 py-1">{numVisibleCols > 0 && <div className="flex gap-2 justify-around items-center">{visibleColumns.budget && (<div className="flex-1 text-center text-xs">{isProvisionEntry && budget > 0 ? (<span className="flex items-center justify-center gap-1 text-indigo-600 font-semibold" title="Montant provisionné"><Gem className="w-3 h-3" />{formatCurrency(budget, settings)}</span>) : (<span className="text-gray-600">{budget > 0 ? formatCurrency(budget, settings) : '-'}</span>)}</div>)}{visibleColumns.actual && <button onClick={() => actual > 0 && handleActualClick({ entryId: entry.id, monthIndex, year: displayYear })} disabled={actual === 0} className="flex-1 text-center text-xs font-semibold text-blue-600 disabled:text-gray-400 disabled:cursor-not-allowed hover:underline">{actual > 0 ? formatCurrency(actual, settings) : '-'}</button>}{visibleColumns.ecart && <div className={`flex-1 text-center text-xs font-semibold ${getEcartColor(actual - budget, type === 'entree')}`}>{budget > 0 || actual > 0 ? formatCurrency(actual - budget, settings) : '-'}</div>}</div>}</td>, <td key={`${monthIndex}-sep`} className="bg-white" style={{ width: `${separatorWidth}px` }}></td>];
+                        const actualAmount = getActualAmountForEntry(entry.id, monthIndex, displayYear);
+                        const canClick = budget > 0;
+                        return [<td key={monthIndex} className="px-2 py-1">{numVisibleCols > 0 && <div className="flex gap-2 justify-around items-center">{visibleColumns.budget && (<div className="flex-1 text-center text-xs">{isProvisionEntry && budget > 0 ? (<span className="flex items-center justify-center gap-1 text-indigo-600 font-semibold" title="Montant provisionné"><Gem className="w-3 h-3" />{formatCurrency(budget, settings)}</span>) : (<span className="text-gray-600">{budget > 0 ? formatCurrency(budget, settings) : '-'}</span>)}</div>)}{visibleColumns.actual && <button onClick={() => handleEditActual(entry.id, monthIndex, displayYear)} disabled={!canClick || isProvisionEntry} className="flex-1 text-center text-xs font-semibold text-blue-600 disabled:text-gray-400 disabled:cursor-not-allowed hover:underline">{actualAmount > 0 ? formatCurrency(actualAmount, settings) : '-'}</button>}{visibleColumns.ecart && <div className={`flex-1 text-center text-xs font-semibold ${getEcartColor(actualAmount - budget, type === 'entree')}`}>{budget > 0 || actualAmount > 0 ? formatCurrency(actualAmount - budget, settings) : '-'}</div>}</div>}</td>, <td key={`${monthIndex}-sep`} className="bg-white" style={{ width: `${separatorWidth}px` }}></td>];
                       })}
                     </tr>
-                  ))}
+                  )})}
                 </React.Fragment>
               );
             })}
@@ -466,7 +489,7 @@ const BudgetTracker = ({ activeProject, budgetEntries, actualTransactions }) => 
                 <td className="bg-white" style={{ width: `${separatorWidth}px` }}></td>
                 {months.flatMap((_, monthIndex) => {
                   const totals = calculateOffBudgetTotalsForMonth(type === 'entree' ? 'revenu' : 'depense', monthIndex);
-                  return [<td key={monthIndex} className="px-2 py-2">{numVisibleCols > 0 && <div className="flex gap-2 justify-around text-sm font-semibold">{visibleColumns.budget && <div className={`flex-1 text-center text-${type === 'entree' ? 'green' : 'orange'}-700`}>{formatCurrency(totals.budget, settings)}</div>}{visibleColumns.actual && <button onClick={() => totals.actual > 0 && handleActualClick({ category: `${type === 'entree' ? 'Entrées' : 'Sorties'} Hors Budget`, monthIndex, year: displayYear })} disabled={totals.actual === 0} className={`flex-1 text-center text-${type === 'entree' ? 'green' : 'orange'}-700 hover:underline disabled:cursor-not-allowed disabled:opacity-60`}>{formatCurrency(totals.actual, settings)}</button>}{visibleColumns.ecart && <div className={`flex-1 text-center ${getEcartColor(totals.ecart, type === 'entree')}`}>{formatCurrency(totals.ecart, settings)}</div>}</div>}</td>, <td key={`${monthIndex}-sep`} className="bg-white" style={{ width: `${separatorWidth}px` }}></td>];
+                  return [<td key={monthIndex} className="px-2 py-2">{numVisibleCols > 0 && <div className="flex gap-2 justify-around text-sm font-semibold">{visibleColumns.budget && <div className={`flex-1 text-center text-${type === 'entree' ? 'green' : 'orange'}-700`}>{formatCurrency(totals.budget, settings)}</div>}{visibleColumns.actual && <button onClick={() => totals.actual > 0 && handleGeneralActualClick({ category: `${type === 'entree' ? 'Entrées' : 'Sorties'} Hors Budget`, monthIndex, year: displayYear })} disabled={totals.actual === 0} className={`flex-1 text-center text-${type === 'entree' ? 'green' : 'orange'}-700 hover:underline disabled:cursor-not-allowed disabled:opacity-60`}>{formatCurrency(totals.actual, settings)}</button>}{visibleColumns.ecart && <div className={`flex-1 text-center ${getEcartColor(totals.ecart, type === 'entree')}`}>{formatCurrency(totals.ecart, settings)}</div>}</div>}</td>, <td key={`${monthIndex}-sep`} className="bg-white" style={{ width: `${separatorWidth}px` }}></td>];
                 })}
               </tr>
             )}
@@ -486,6 +509,7 @@ const BudgetTracker = ({ activeProject, budgetEntries, actualTransactions }) => 
             <div className="flex items-center gap-2">
               <label className="text-sm font-medium text-gray-600">Unité:</label>
               <select value={timeUnit} onChange={(e) => setTimeUnit(e.target.value)} className="px-2 py-1 border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 text-sm">
+                <option value="day">Jour</option>
                 <option value="week">Semaine</option>
                 <option value="month">Mois</option>
                 <option value="bimonthly">Bimestre</option>
@@ -533,7 +557,20 @@ const BudgetTracker = ({ activeProject, budgetEntries, actualTransactions }) => 
           <div className="flex items-center gap-2"><span className="text-sm font-semibold text-gray-700 flex items-center gap-2"><Eye className="w-4 h-4"/>Colonnes:</span><label className="flex items-center gap-2 text-sm cursor-pointer"><input type="checkbox" checked={visibleColumns.budget} onChange={() => setVisibleColumns(prev => ({ ...prev, budget: !prev.budget }))} /> Budget</label><label className="flex items-center gap-2 text-sm cursor-pointer"><input type="checkbox" checked={visibleColumns.actual} onChange={() => setVisibleColumns(prev => ({ ...prev, actual: !prev.actual }))} /> Réel</label><label className="flex items-center gap-2 text-sm cursor-pointer"><input type="checkbox" checked={visibleColumns.ecart} onChange={() => setVisibleColumns(prev => ({ ...prev, ecart: !prev.ecart }))} /> Écart</label></div>
           <div className="flex items-center gap-2"><span className="text-sm font-semibold text-gray-700 flex items-center gap-2"><Eye className="w-4 h-4"/>Lignes:</span><label className="flex items-center gap-2 text-sm cursor-pointer"><input type="checkbox" checked={visibleColumns.netResultRow} onChange={() => setVisibleColumns(prev => ({ ...prev, netResultRow: !prev.netResultRow }))} /> Résultat Net</label><label className="flex items-center gap-2 text-sm cursor-pointer"><input type="checkbox" checked={visibleColumns.cumulativeNetResultRow} onChange={() => setVisibleColumns(prev => ({ ...prev, cumulativeNetResultRow: !prev.cumulativeNetResultRow }))} /> Résultat Cumulé</label></div>
         </div>
-        <div className="flex items-center gap-4"><label htmlFor="search-supplier" className="relative text-gray-400 focus-within:text-gray-600 block"><Search className="pointer-events-none w-5 h-5 absolute top-1/2 transform -translate-y-1/2 left-3" /><input type="text" id="search-supplier" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Rechercher par Tiers..." className="form-input block w-full pl-10 pr-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:border-blue-400 text-sm" /></label><button onClick={handleNewBudget} className="text-blue-600 hover:bg-blue-100 px-4 py-2 rounded-lg font-medium flex items-center gap-2 transition-colors disabled:text-gray-400 disabled:cursor-not-allowed" disabled={isConsolidated}><Plus className="w-5 h-5" /> Nouveau Budget</button></div>
+        <div className="flex items-center gap-4">
+          <label htmlFor="search-supplier" className="relative text-gray-400 focus-within:text-gray-600 block">
+              <Search className="pointer-events-none w-5 h-5 absolute top-1/2 transform -translate-y-1/2 left-3" />
+              <input type="text" id="search-supplier" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Rechercher par Tiers..." className="form-input block w-full pl-10 pr-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:border-blue-400 text-sm" />
+          </label>
+          <div className="flex items-center gap-2">
+              <button onClick={() => handleNewEntry('depense')} className="bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700 text-white px-4 py-2 rounded-lg font-medium flex items-center gap-2 transition-all shadow-md hover:shadow-lg disabled:from-gray-400 disabled:to-gray-500 disabled:cursor-not-allowed" disabled={isConsolidated}>
+                  <TrendingDown className="w-5 h-5" /> Nouvelle Sortie
+              </button>
+              <button onClick={() => handleNewEntry('revenu')} className="bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white px-4 py-2 rounded-lg font-medium flex items-center gap-2 transition-all shadow-md hover:shadow-lg disabled:from-gray-400 disabled:to-gray-500 disabled:cursor-not-allowed" disabled={isConsolidated}>
+                  <TrendingUp className="w-5 h-5" /> Nouvelle Entrée
+              </button>
+          </div>
+        </div>
       </div>
       <div className="bg-white rounded-lg shadow-lg overflow-hidden">
         <div ref={topScrollRef} className="overflow-x-auto overflow-y-hidden custom-scrollbar"><div style={{ width: `${totalTableWidth}px`, height: '1px' }}></div></div>
@@ -556,7 +593,7 @@ const BudgetTracker = ({ activeProject, budgetEntries, actualTransactions }) => 
               <tr className="bg-white"><td colSpan={totalCols} className="py-2"></td></tr>
               {renderBudgetRows('sortie')}
               <tr className="bg-white"><td colSpan={totalCols} className="py-2"></td></tr>
-              {visibleColumns.netResultRow && (<tr className="bg-gray-300 border-t-2 border-gray-400"><td colSpan={isConsolidated ? 4 : 3} className="px-4 py-2 font-bold text-gray-900 bg-gray-300 sticky left-0 z-10">RÉSULTAT NET MENSUEL</td><td className="bg-white" style={{ width: `${separatorWidth}px` }}></td>{months.flatMap((_, monthIndex) => { const revenueTotals = calculateGeneralTotals(groupedData.entree || [], monthIndex, 'entree'); const expenseTotals = calculateGeneralTotals(groupedData.sortie || [], monthIndex, 'sortie'); const netBudget = revenueTotals.budget - expenseTotals.budget; const netActual = revenueTotals.actual - expenseTotals.actual; return [<td key={monthIndex} className="px-2 py-2">{numVisibleCols > 0 && <div className="flex gap-2 justify-around text-sm font-bold">{visibleColumns.budget && <div className="flex-1 text-center text-gray-900">{formatCurrency(netBudget, settings)}</div>}{visibleColumns.actual && <button onClick={() => netActual !== 0 && handleActualClick({ type: 'net', monthIndex, year: displayYear })} disabled={netActual === 0} className="flex-1 text-center text-gray-900 hover:underline disabled:cursor-not-allowed disabled:opacity-60">{formatCurrency(netActual, settings)}</button>}{visibleColumns.ecart && <div className={`flex-1 text-center ${getEcartColor(netActual - netBudget, true)}`}>{formatCurrency(netActual - netBudget, settings)}</div>}</div>}</td>, <td key={`${monthIndex}-sep`} className="bg-white" style={{ width: `${separatorWidth}px` }}></td>]; })}</tr>)}
+              {visibleColumns.netResultRow && (<tr className="bg-gray-300 border-t-2 border-gray-400"><td colSpan={isConsolidated ? 4 : 3} className="px-4 py-2 font-bold text-gray-900 bg-gray-300 sticky left-0 z-10">RÉSULTAT NET MENSUEL</td><td className="bg-white" style={{ width: `${separatorWidth}px` }}></td>{months.flatMap((_, monthIndex) => { const revenueTotals = calculateGeneralTotals(groupedData.entree || [], monthIndex, 'entree'); const expenseTotals = calculateGeneralTotals(groupedData.sortie || [], monthIndex, 'sortie'); const netBudget = revenueTotals.budget - expenseTotals.budget; const netActual = revenueTotals.actual - expenseTotals.actual; return [<td key={monthIndex} className="px-2 py-2">{numVisibleCols > 0 && <div className="flex gap-2 justify-around text-sm font-bold">{visibleColumns.budget && <div className="flex-1 text-center text-gray-900">{formatCurrency(netBudget, settings)}</div>}{visibleColumns.actual && <button onClick={() => netActual !== 0 && handleGeneralActualClick({ type: 'net', monthIndex, year: displayYear })} disabled={netActual === 0} className="flex-1 text-center text-gray-900 hover:underline disabled:cursor-not-allowed disabled:opacity-60">{formatCurrency(netActual, settings)}</button>}{visibleColumns.ecart && <div className={`flex-1 text-center ${getEcartColor(netActual - netBudget, true)}`}>{formatCurrency(netActual - netBudget, settings)}</div>}</div>}</td>, <td key={`${monthIndex}-sep`} className="bg-white" style={{ width: `${separatorWidth}px` }}></td>]; })}</tr>)}
               {visibleColumns.netResultRow && visibleColumns.cumulativeNetResultRow && (<tr className="bg-white"><td colSpan={totalCols} className="py-1"></td></tr>)}
               {visibleColumns.cumulativeNetResultRow && (<tr className={`bg-gray-300 border-b-2 border-gray-400 ${!visibleColumns.netResultRow ? 'border-t-2' : ''}`}><td colSpan={isConsolidated ? 4 : 3} className="px-4 py-2 font-bold text-gray-900 bg-gray-300 sticky left-0 z-10">RÉSULTAT NET CUMULÉ</td><td className="bg-white" style={{ width: `${separatorWidth}px` }}></td>{months.flatMap((_, monthIndex) => { const cumulativeResult = calculateCumulativeResult(monthIndex); return [<td key={monthIndex} className="px-2 py-2">{numVisibleCols > 0 && <div className="flex gap-2 justify-around text-sm font-bold">{visibleColumns.budget && <div className="flex-1 text-center text-gray-900">{formatCurrency(cumulativeResult.budget, settings)}</div>}{visibleColumns.actual && <div className="flex-1 text-center text-gray-900">{formatCurrency(cumulativeResult.actual, settings)}</div>}{visibleColumns.ecart && <div className={`flex-1 text-center ${getEcartColor(cumulativeResult.ecart, true)}`}>{formatCurrency(cumulativeResult.ecart, settings)}</div>}</div>}</td>, <td key={`${monthIndex}-sep`} className="bg-white" style={{ width: `${separatorWidth}px` }}></td>]; })}</tr>)}
               <tr className="bg-white"><td colSpan={totalCols} className="py-1"></td></tr>
@@ -565,7 +602,6 @@ const BudgetTracker = ({ activeProject, budgetEntries, actualTransactions }) => 
           </table>
         </div>
       </div>
-      <TransactionDetailDrawer isOpen={drawerData.isOpen} onClose={handleCloseDrawer} transactions={drawerData.transactions} title={drawerData.title} />
       <CashflowDetailDrawer isOpen={cashflowDrawerData.isOpen} onClose={() => setCashflowDrawerData({ isOpen: false, transactions: [], title: '' })} transactions={cashflowDrawerData.transactions} title={cashflowDrawerData.title} />
     </div>
   );

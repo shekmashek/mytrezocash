@@ -11,10 +11,11 @@ import JournalsView from './components/JournalsView';
 import BudgetModal from './components/BudgetModal';
 import DashboardView from './components/DashboardView';
 import InfoModal from './components/InfoModal';
+import ActualEditorDrawer from './components/ActualEditorDrawer';
 
 function App() {
   const { state, dispatch } = useBudget();
-  const { activeProjectId, currentView, activeSettingsDrawer, isBudgetModalOpen, editingEntry, infoModal } = state;
+  const { activeProjectId, currentView, activeSettingsDrawer, isBudgetModalOpen, editingEntry, infoModal, isActualEditorDrawerOpen, editingActualId } = state;
 
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
@@ -102,6 +103,11 @@ function App() {
           message={infoModal.message}
         />
       )}
+      <ActualEditorDrawer
+        isOpen={isActualEditorDrawerOpen}
+        onClose={() => dispatch({ type: 'CLOSE_ACTUAL_EDITOR_DRAWER' })}
+        actualId={editingActualId}
+      />
     </div>
   );
 }

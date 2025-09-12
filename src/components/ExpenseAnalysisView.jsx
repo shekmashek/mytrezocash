@@ -12,7 +12,8 @@ const categoryDefinitions = {
   'exp-main-6': "Elle permet de gérer les événements ponctuels et imprévisibles (pertes, restructurations) sans perturber le budget normal d'exploitation.",
   'exp-main-7': "Leur paiement est une obligation légale dont le non-respect entraînerait des pénalités financières et juridiques graves pour l'entreprise.",
   'exp-main-8': "Elle maintient et améliore les compétences de vos employés, ce qui est crucial pour l'adaptation, la productivité et l'innovation continue.",
-  'exp-main-9': "Elle est le moteur du développement de nouveaux produits ou services, garantissant l'avance concurrentielle et la pérennité de l'entreprise sur le marché."
+  'exp-main-9': "Elle est le moteur du développement de nouveaux produits ou services, garantissant l'avance concurrentielle et la pérennité de l'entreprise sur le marché.",
+  'exp-main-10': "Couvre les dépenses essentielles liées au foyer et à la famille, assurant le bien-être et le quotidien des membres du ménage."
 };
 
 const ExpenseAnalysisView = () => {

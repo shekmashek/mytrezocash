@@ -39,6 +39,28 @@ export const getEntryAmountForMonth = (entry, monthIndex, year) => {
     if (targetMonthEnd < startDate || (endDate && targetMonthStart > endDate)) return 0;
 
     switch (entry.frequency) {
+      case 'journalier': {
+        const start = targetMonthStart > startDate ? targetMonthStart : startDate;
+        const end = endDate && targetMonthEnd > endDate ? endDate : targetMonthEnd;
+        
+        if (end < start) return 0;
+
+        let count = 0;
+        let currentDate = new Date(start);
+        
+        // If daysOfWeek is not specified or empty, count all days for backward compatibility.
+        const daysToCount = entry.daysOfWeek && Array.isArray(entry.daysOfWeek) && entry.daysOfWeek.length > 0 
+            ? entry.daysOfWeek 
+            : [0, 1, 2, 3, 4, 5, 6];
+
+        while(currentDate <= end) {
+            if (daysToCount.includes(currentDate.getDay())) {
+                count++;
+            }
+            currentDate.setDate(currentDate.getDate() + 1);
+        }
+        return entry.amount * count;
+      }
       case 'mensuel': return entry.amount;
       case 'hebdomadaire': return entry.amount * getWeeksInMonth(year, monthIndex);
       case 'bimestriel': return (monthIndex - startDate.getMonth()) % 2 === 0 && monthIndex >= startDate.getMonth() ? entry.amount : 0;

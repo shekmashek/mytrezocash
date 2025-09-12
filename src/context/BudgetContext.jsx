@@ -13,6 +13,7 @@ const getDefaultExpenseTargets = () => ({
   'exp-main-7': 10, // Impôts et Taxes
   'exp-main-8': 5,  // Formation
   'exp-main-9': 5,  // Innovation, Recherche et développement
+  'exp-main-10': 0, // Famille
 });
 
 const initialProjects = [
@@ -48,6 +49,7 @@ const initialCategories = {
     { id: 'exp-main-7', name: 'Impôts et Taxes', isFixed: true, subCategories: [{ id: uuidv4(), name: 'Impôt sur les sociétés' }, { id: uuidv4(), name: 'TVA' }, { id: uuidv4(), name: 'Autres taxes'}] },
     { id: 'exp-main-8', name: 'Formation', isFixed: true, subCategories: [] },
     { id: 'exp-main-9', name: 'Innovation, Recherche et développement', isFixed: true, subCategories: [] },
+    { id: 'exp-main-10', name: 'Famille', isFixed: false, subCategories: [{ id: uuidv4(), name: 'Logement' }, { id: uuidv4(), name: 'Alimentation' }, { id: uuidv4(), name: 'Transport' }, { id: uuidv4(), name: 'Santé' }, { id: uuidv4(), name: 'Loisirs' }, { id: uuidv4(), name: 'Enfant et education' }] },
   ]
 };
 
@@ -433,6 +435,11 @@ const budgetReducer = (state, action) => {
       return { ...state, isBudgetModalOpen: true, editingEntry: action.payload };
     case 'CLOSE_BUDGET_MODAL':
       return { ...state, isBudgetModalOpen: false, editingEntry: null };
+    
+    case 'OPEN_ACTUAL_EDITOR_DRAWER':
+      return { ...state, isActualEditorDrawerOpen: true, editingActualId: action.payload };
+    case 'CLOSE_ACTUAL_EDITOR_DRAWER':
+      return { ...state, isActualEditorDrawerOpen: false, editingActualId: null };
 
     case 'SAVE_ENTRY': {
         const { entryData, editingEntry } = action.payload;
@@ -570,102 +577,147 @@ isFinalProvisionPayment: true,
     }
     
     case 'SAVE_ACTUAL': {
-        const { actualData, editingActual } = action.payload;
-        let newState = { ...state };
-        const targetProjectId = state.activeProjectId;
+      const { actualData, editingActual } = action.payload;
+      let newState = { ...state };
+      
+      const targetProjectId = editingActual ? editingActual.projectId : state.activeProjectId;
+      if (!targetProjectId || targetProjectId === CONSOLIDATED_PROJECT_ID) {
+          console.error("Cannot save actual without a specific project.");
+          return state;
+      }
 
-        const tierName = actualData.thirdParty?.trim();
-        if (tierName) {
-            const tierType = actualData.type === 'receivable' ? 'client' : 'fournisseur';
-            const tierExists = state.tiers.some(t => t.name.toLowerCase() === tierName.toLowerCase() && t.type === tierType);
-            if (!tierExists) {
-                 const newTier = { name: tierName, type: tierType, id: uuidv4() };
-                 newState = { ...newState, tiers: [...newState.tiers, newTier] };
-            }
-        }
-        
-        let newAllEntries = { ...newState.allEntries };
-        let finalActualData = { ...actualData };
+      const tierName = actualData.thirdParty?.trim();
+      if (tierName) {
+          const tierType = actualData.type === 'receivable' ? 'client' : 'fournisseur';
+          const tierExists = state.tiers.some(t => t.name.toLowerCase() === tierName.toLowerCase() && t.type === tierType);
+          if (!tierExists) {
+               const newTier = { name: tierName, type: tierType, id: uuidv4() };
+               newState = { ...newState, tiers: [...newState.tiers, newTier] };
+          }
+      }
+      
+      let newAllEntries = { ...newState.allEntries };
+      let finalActualData = { ...actualData };
 
-        if (!editingActual && !actualData.budgetId) {
-            const newBudgetId = uuidv4();
-            const newBudgetEntry = {
-                id: newBudgetId,
-                type: actualData.type === 'payable' ? 'depense' : 'revenu',
-                category: actualData.category,
-                frequency: 'ponctuel',
-                amount: actualData.amount,
-                date: actualData.date,
-                startDate: actualData.date,
-                endDate: null,
-                supplier: actualData.thirdParty,
-                description: actualData.type === 'payable' ? 'Sortie hors budget' : 'Entrée hors budget',
-                isOffBudget: true,
-                payments: []
-            };
-            const projectEntries = [...(newAllEntries[targetProjectId] || [])];
-            projectEntries.push(newBudgetEntry);
-            newAllEntries[targetProjectId] = projectEntries;
-            finalActualData.budgetId = newBudgetId;
-        }
-        
-        const newAllActuals = { ...newState.allActuals };
-        const projectActuals = [...(newAllActuals[targetProjectId] || [])];
-        if (editingActual) {
-            const index = projectActuals.findIndex(a => a.id === editingActual.id);
-            if (index > -1) projectActuals[index] = { ...editingActual, ...finalActualData };
-        } else {
-            projectActuals.push({ ...finalActualData, id: uuidv4(), projectId: targetProjectId, payments: [] });
-        }
-        newAllActuals[targetProjectId] = projectActuals;
+      if (!editingActual && !actualData.budgetId) {
+          const newBudgetId = uuidv4();
+          const newBudgetEntry = {
+              id: newBudgetId,
+              type: actualData.type === 'payable' ? 'depense' : 'revenu',
+              category: actualData.category,
+              frequency: 'ponctuel',
+              amount: actualData.amount,
+              date: actualData.date,
+              startDate: actualData.date,
+              endDate: null,
+              supplier: actualData.thirdParty,
+              description: actualData.type === 'payable' ? 'Sortie hors budget' : 'Entrée hors budget',
+              isOffBudget: true,
+              payments: []
+          };
+          const projectEntries = [...(newAllEntries[targetProjectId] || [])];
+          projectEntries.push(newBudgetEntry);
+          newAllEntries[targetProjectId] = projectEntries;
+          finalActualData.budgetId = newBudgetId;
+      }
+      
+      const newAllActuals = { ...newState.allActuals };
+      const projectActuals = [...(newAllActuals[targetProjectId] || [])];
+      if (editingActual) {
+          const index = projectActuals.findIndex(a => a.id === editingActual.id);
+          if (index > -1) {
+            const existingPayments = projectActuals[index].payments || [];
+            projectActuals[index] = { ...editingActual, ...finalActualData, payments: existingPayments };
+          }
+      } else {
+          projectActuals.push({ ...finalActualData, id: uuidv4(), projectId: targetProjectId, payments: [] });
+      }
+      newAllActuals[targetProjectId] = projectActuals;
 
-        return { ...newState, allEntries: newAllEntries, allActuals: newAllActuals };
+      return { ...newState, allEntries: newAllEntries, allActuals: newAllActuals };
     }
     case 'DELETE_ACTUAL': {
-        const actualId = action.payload;
-        const targetProjectId = state.activeProjectId;
-        const newAllActuals = { ...state.allActuals };
-        newAllActuals[targetProjectId] = (newAllActuals[targetProjectId] || []).filter(a => a.id !== actualId);
-        return { ...state, allActuals: newAllActuals };
+      const actualId = action.payload;
+      const newAllActuals = JSON.parse(JSON.stringify(state.allActuals));
+      let wasDeleted = false;
+      for (const projId in newAllActuals) {
+          const originalLength = newAllActuals[projId].length;
+          newAllActuals[projId] = newAllActuals[projId].filter(a => a.id !== actualId);
+          if (newAllActuals[projId].length < originalLength) {
+              wasDeleted = true;
+              break;
+          }
+      }
+      return wasDeleted ? { ...state, allActuals: newAllActuals } : state;
+    }
+    case 'DELETE_PAYMENT': {
+      const { actualId, paymentId } = action.payload;
+      const newAllActuals = JSON.parse(JSON.stringify(state.allActuals));
+      let actualFound = false;
+
+      for (const projectId in newAllActuals) {
+        const projectActuals = newAllActuals[projectId];
+        const actualIndex = projectActuals.findIndex(a => a.id === actualId);
+
+        if (actualIndex > -1) {
+          const actual = projectActuals[actualIndex];
+          actual.payments = actual.payments.filter(p => p.id !== paymentId);
+
+          const totalPaid = actual.payments.reduce((sum, p) => sum + p.paidAmount, 0);
+          if (totalPaid === 0) {
+            actual.status = 'pending';
+          } else if (totalPaid < actual.amount) {
+            actual.status = actual.type === 'payable' ? 'partially_paid' : 'partially_received';
+          } else {
+            actual.status = actual.type === 'payable' ? 'paid' : 'received';
+          }
+          actualFound = true;
+          break;
+        }
+      }
+      
+      return actualFound ? { ...state, allActuals: newAllActuals } : state;
     }
     case 'RECORD_PAYMENT': {
         const { actualId, paymentData } = action.payload;
-        const targetProjectId = state.activeProjectId;
-        const newAllActuals = { ...state.allActuals };
-        const projectActuals = [...(newAllActuals[targetProjectId] || [])];
-        const index = projectActuals.findIndex(a => a.id === actualId);
-        let nextState = state;
+        const newAllActuals = JSON.parse(JSON.stringify(state.allActuals));
+        let nextState = { ...state };
+        let actualFound = false;
 
-        if (index > -1) {
-            const actual = { ...projectActuals[index] };
-            actual.payments = [...(actual.payments || []), { ...paymentData, id: uuidv4() }];
-            const totalPaid = actual.payments.reduce((sum, p) => sum + p.paidAmount, 0);
-            if (paymentData.isFinalPayment || totalPaid >= actual.amount) {
-                actual.status = actual.type === 'payable' || actual.type === 'internal_transfer' ? 'paid' : 'received';
-            } else {
-                actual.status = actual.type === 'payable' || actual.type === 'internal_transfer' ? 'partially_paid' : 'partially_received';
-            }
-            projectActuals[index] = actual;
-            newAllActuals[targetProjectId] = projectActuals;
-            nextState = { ...state, allActuals: newAllActuals };
-            
-            if (actual.isProvision && actual.status === 'paid') {
-                const allProvisionsForBudget = projectActuals.filter(a => a.budgetId === actual.budgetId && a.isProvision);
-                const allProvisionsPaid = allProvisionsForBudget.every(p => p.status === 'paid');
+        for (const projectId in newAllActuals) {
+            const projectActuals = newAllActuals[projectId];
+            const index = projectActuals.findIndex(a => a.id === actualId);
 
-                if (allProvisionsPaid) {
-                    const finalPaymentActual = projectActuals.find(a => a.budgetId === actual.budgetId && a.isFinalProvisionPayment);
-                    if (finalPaymentActual) {
-                        return {
-                            ...nextState,
-                            infoModal: {
+            if (index > -1) {
+                const actual = projectActuals[index];
+                actual.payments = [...(actual.payments || []), { ...paymentData, id: uuidv4() }];
+                const totalPaid = actual.payments.reduce((sum, p) => sum + p.paidAmount, 0);
+
+                if (paymentData.isFinalPayment || totalPaid >= actual.amount) {
+                    actual.status = actual.type === 'payable' || actual.type === 'internal_transfer' ? 'paid' : 'received';
+                } else {
+                    actual.status = actual.type === 'payable' || actual.type === 'internal_transfer' ? 'partially_paid' : 'partially_received';
+                }
+                
+                actualFound = true;
+                nextState = { ...state, allActuals: newAllActuals };
+
+                if (actual.isProvision && actual.status === 'paid') {
+                    const allProvisionsForBudget = projectActuals.filter(a => a.budgetId === actual.budgetId && a.isProvision);
+                    const allProvisionsPaid = allProvisionsForBudget.every(p => p.status === 'paid');
+
+                    if (allProvisionsPaid) {
+                        const finalPaymentActual = projectActuals.find(a => a.budgetId === actual.budgetId && a.isFinalProvisionPayment);
+                        if (finalPaymentActual) {
+                            nextState.infoModal = {
                                 isOpen: true,
                                 title: 'Provision Terminée !',
                                 message: `La provision pour "${finalPaymentActual.description.replace('Paiement final pour: ', '')}" est maintenant complète. Vous pouvez procéder au paiement final auprès de ${finalPaymentActual.thirdParty}.`
-                            }
-                        };
+                            };
+                        }
                     }
                 }
+                break; 
             }
         }
         return nextState;
@@ -688,7 +740,6 @@ const loadInitialState = () => {
         if (savedState) {
             const parsedState = JSON.parse(savedState);
             
-            // Migration for category names
             if (parsedState.categories && parsedState.categories.revenue) {
                 const nameMapping = {
                     'Revenus des Ventes': 'Entrées des Ventes',
@@ -724,7 +775,6 @@ const loadInitialState = () => {
             if (!parsedState.userCashAccounts || !Array.isArray(parsedState.userCashAccounts)) {
                 parsedState.userCashAccounts = initialUserCashAccounts;
             } else {
-                // Migration logic for cash accounts categories
                 const migrationMapping = {
                     'proCurrent': 'bank',
                     'persoCurrent': 'bank',
@@ -732,14 +782,14 @@ const loadInitialState = () => {
                     'blocked': 'provisions',
                     'investment': 'savings',
                     'cash': 'cash',
-                    'other': 'savings', // Default 'other' to 'savings'
+                    'other': 'savings',
                 };
                 const validCategories = mainCashAccountCategories.map(c => c.id);
                 parsedState.userCashAccounts.forEach(acc => {
                     if (migrationMapping[acc.mainCategoryId]) {
                         acc.mainCategoryId = migrationMapping[acc.mainCategoryId];
                     } else if (!validCategories.includes(acc.mainCategoryId)) {
-                        acc.mainCategoryId = 'savings'; // Default any other old/unknown to 'savings'
+                        acc.mainCategoryId = 'savings';
                     }
                 });
             }
@@ -749,7 +799,7 @@ const loadInitialState = () => {
                     if (!p.expenseTargets) p.expenseTargets = getDefaultExpenseTargets();
                     if (!p.annualGoals) p.annualGoals = {};
                     if (p.isArchived === undefined) p.isArchived = false;
-                    delete p.currency; // Remove per-project currency on load
+                    delete p.currency;
                 });
             }
             
@@ -765,12 +815,15 @@ const loadInitialState = () => {
                 parsedState.displayYear = new Date().getFullYear();
             }
 
-            // Remove user-related state on load
             delete parsedState.users;
             delete parsedState.permissions;
             delete parsedState.isAuthenticated;
 
-            return parsedState;
+            return {
+              ...parsedState,
+              isActualEditorDrawerOpen: false,
+              editingActualId: null,
+            };
         }
     } catch (e) {
         console.error("Failed to load state from localStorage", e);
@@ -793,6 +846,8 @@ const loadInitialState = () => {
         activeSettingsDrawer: null,
         isBudgetModalOpen: false,
         editingEntry: null,
+        isActualEditorDrawerOpen: false,
+        editingActualId: null,
     };
 };
 

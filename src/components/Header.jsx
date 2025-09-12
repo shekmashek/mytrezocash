@@ -49,6 +49,23 @@ const Header = ({ isCollapsed, onToggleCollapse, onOpenSettingsDrawer }) => {
 
   const isConsolidated = activeProjectId === 'consolidated';
 
+  const [currency, setCurrency] = useState(settings.currency);
+  const [customCurrency, setCustomCurrency] = useState('');
+  const [isCustom, setIsCustom] = useState(false);
+  const predefinedCurrencies = ['€', '$', '£', 'Ar'];
+
+  useEffect(() => {
+    if (predefinedCurrencies.includes(settings.currency)) {
+      setCurrency(settings.currency);
+      setIsCustom(false);
+      setCustomCurrency('');
+    } else {
+      setCurrency('custom');
+      setCustomCurrency(settings.currency);
+      setIsCustom(true);
+    }
+  }, [settings.currency]);
+
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (settingsRef.current && !settingsRef.current.contains(event.target)) setIsSettingsOpen(false);
@@ -87,6 +104,25 @@ const Header = ({ isCollapsed, onToggleCollapse, onOpenSettingsDrawer }) => {
   
   const handleSettingsChange = (key, value) => {
     dispatch({ type: 'UPDATE_SETTINGS', payload: { ...settings, [key]: value } });
+  };
+
+  const handleCurrencyChange = (e) => {
+    const value = e.target.value;
+    setCurrency(value);
+    if (value === 'custom') {
+      setIsCustom(true);
+    } else {
+      setIsCustom(false);
+      handleSettingsChange('currency', value);
+    }
+  };
+
+  const handleCustomCurrencyChange = (e) => {
+    const newCustomCurrency = e.target.value;
+    setCustomCurrency(newCustomCurrency);
+    if (newCustomCurrency.trim()) {
+      handleSettingsChange('currency', newCustomCurrency.trim());
+    }
   };
 
   return (
@@ -134,11 +170,29 @@ const Header = ({ isCollapsed, onToggleCollapse, onOpenSettingsDrawer }) => {
                 <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Paramètres</h3>
             </div>
             <ul className="space-y-1 px-2 mt-1">
-                <li className="text-sm">
-                    <button onClick={() => handleSettingsItemClick('currency')} className="flex items-center w-full h-10 px-2 rounded-lg text-gray-600 hover:bg-gray-100">
+                <li className="text-sm px-2 py-2">
+                    <label className="block font-medium text-gray-600 mb-1 flex items-center gap-2">
                         <Globe className="w-5 h-5 text-blue-500" />
-                        <span className="ml-4">Devise</span>
-                    </button>
+                        Devise
+                    </label>
+                    <select 
+                      value={currency} 
+                      onChange={handleCurrencyChange} 
+                      className="w-full text-sm rounded-md border-gray-300 focus:ring-blue-500 focus:border-blue-500 py-1"
+                    >
+                      {predefinedCurrencies.map(c => <option key={c} value={c}>{c}</option>)}
+                      <option value="custom">Personnalisé...</option>
+                    </select>
+                    {isCustom && (
+                        <input
+                            type="text"
+                            value={customCurrency}
+                            onChange={handleCustomCurrencyChange}
+                            placeholder="Symbole"
+                            className="w-full text-sm mt-2 rounded-md border-gray-300 focus:ring-blue-500 focus:border-blue-500 py-1"
+                            maxLength="5"
+                        />
+                    )}
                 </li>
                 <li className="text-sm px-2 py-2">
                     <label className="block font-medium text-gray-600 mb-1">Unité</label>

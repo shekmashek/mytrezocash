@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Calendar, User, Building, Trash2, Edit, Clock, Repeat, AlertCircle, ListChecks, PlusCircle, PiggyBank, Annoyed } from 'lucide-react';
+import { X, Calendar, User, Building, Trash2, Edit, Clock, Repeat, AlertCircle, ListChecks, PlusCircle, PiggyBank } from 'lucide-react';
 import { formatCurrency } from '../utils/formatting';
 import AddCategoryModal from './AddCategoryModal';
 import { useBudget } from '../context/BudgetContext';
@@ -8,8 +8,12 @@ const BudgetModal = ({ isOpen, onClose, onSave, onDelete, editingData }) => {
   const { state, dispatch } = useBudget();
   const { categories, tiers, settings, userCashAccounts } = state;
 
-  const getInitialFormData = () => ({
-    type: 'revenu',
+  const isEditing = editingData && editingData.id;
+  const isAdding = editingData && !editingData.id;
+  const entryType = editingData?.type;
+
+  const getInitialFormData = (type = 'revenu') => ({
+    type: type,
     category: '',
     frequency: 'ponctuel',
     amount: '',
@@ -24,54 +28,89 @@ const BudgetModal = ({ isOpen, onClose, onSave, onDelete, editingData }) => {
     provisionDetails: {
         finalPaymentDate: '',
         provisionAccountId: ''
-    }
+    },
+    daysOfWeek: [1, 2, 3, 4, 5, 6, 0], // All days selected by default
   });
 
-  const [formData, setFormData] = useState(getInitialFormData());
+  const [formData, setFormData] = useState(getInitialFormData(entryType));
   const [isAddCategoryModalOpen, setIsAddCategoryModalOpen] = useState(false);
 
-  const frequencyOptions = [
+  const mainFrequencyTypes = [
     { value: 'ponctuel', label: 'Ponctuel', icon: Calendar },
-    { value: 'mensuel', label: 'Mensuel', icon: Repeat },
-    { value: 'bimestriel', label: 'Bimestriel', icon: Repeat },
-    { value: 'trimestriel', label: 'Trimestriel', icon: Repeat },
-    { value: 'annuel', label: 'Annuel', icon: Calendar },
-    { value: 'hebdomadaire', label: 'Hebdomadaire', icon: Clock },
-    { value: 'irregulier', label: 'Paiements Irréguliers', icon: ListChecks },
-    { value: 'provision', label: 'À Provisionner', icon: PiggyBank, type: 'depense' }
+    { value: 'periodique', label: 'Périodique', icon: Repeat },
+    { value: 'irregulier', label: 'Irrégulier', icon: ListChecks },
   ];
+
+  const periodicOptions = [
+    { value: 'journalier', label: 'Journalier' },
+    { value: 'hebdomadaire', label: 'Hebdomadaire' },
+    { value: 'mensuel', label: 'Mensuel' },
+    { value: 'bimestriel', label: 'Bimestriel' },
+    { value: 'trimestriel', label: 'Trimestriel' },
+    { value: 'annuel', label: 'Annuel' },
+  ];
+  
+  const daysOfWeekOptions = [
+    { label: 'Lundi', value: 1 },
+    { label: 'Mardi', value: 2 },
+    { label: 'Mercredi', value: 3 },
+    { label: 'Jeudi', value: 4 },
+    { label: 'Vendredi', value: 5 },
+    { label: 'Samedi', value: 6 },
+    { label: 'Dimanche', value: 0 },
+  ];
+
+  const periodicFrequencies = periodicOptions.map(opt => opt.value);
+  const mainFrequencyType = periodicFrequencies.includes(formData.frequency) ? 'periodique' : formData.frequency;
 
   useEffect(() => {
     if (isOpen) {
       if (editingData) {
-        const mainCategoryType = categories.revenue.some(mc => mc.subCategories.some(sc => sc.name === editingData.category)) ? 'revenu' : 'depense';
+        const typeFromCategory = editingData.category 
+            ? (categories.revenue.some(mc => mc.subCategories.some(sc => sc.name === editingData.category)) ? 'revenu' : 'depense')
+            : null;
+        
+        const initialType = editingData.type || typeFromCategory || 'revenu';
+        const initialFrequency = editingData.frequency || 'ponctuel';
+
         setFormData({
-          ...getInitialFormData(),
-          type: mainCategoryType,
-          category: editingData.category,
-          frequency: editingData.frequency,
-          amount: editingData.amount,
-          date: editingData.date || new Date().toISOString().split('T')[0],
-          startDate: editingData.startDate || new Date().toISOString().split('T')[0],
-          endDate: editingData.endDate || '',
-          supplier: editingData.supplier,
-          description: editingData.description || '',
+          ...getInitialFormData(initialType),
+          ...editingData,
+          frequency: initialFrequency,
+          daysOfWeek: editingData.daysOfWeek && Array.isArray(editingData.daysOfWeek) ? editingData.daysOfWeek : [1, 2, 3, 4, 5, 6, 0],
           payments: editingData.payments && editingData.payments.length > 0 ? editingData.payments : [{ date: new Date().toISOString().split('T')[0], amount: '' }],
           totalProvisionAmount: editingData.frequency === 'provision' ? editingData.amount : '',
-          numProvisions: editingData.frequency === 'provision' ? editingData.payments.length : '',
-          provisionDetails: editingData.provisionDetails || { finalPaymentDate: '', provisionAccountId: '' }
+          numProvisions: editingData.frequency === 'provision' ? (editingData.payments?.length || '') : '',
         });
       } else {
-        setFormData(getInitialFormData());
+        setFormData(getInitialFormData(entryType));
       }
     }
-  }, [editingData, isOpen, categories.revenue]);
+  }, [editingData, isOpen, categories.revenue, entryType]);
   
   useEffect(() => {
     if (formData.frequency === 'provision') {
       setFormData(prev => ({ ...prev, type: 'depense' }));
     }
   }, [formData.frequency]);
+
+  const handleMainFrequencyChange = (newMainType) => {
+    if (newMainType === 'periodique') {
+      setFormData(prev => ({ ...prev, frequency: 'mensuel' }));
+    } else {
+      setFormData(prev => ({ ...prev, frequency: newMainType }));
+    }
+  };
+  
+  const handleDayOfWeekChange = (dayValue) => {
+    setFormData(prev => {
+      const currentDays = prev.daysOfWeek || [];
+      const newDays = currentDays.includes(dayValue)
+        ? currentDays.filter(d => d !== dayValue)
+        : [...currentDays, dayValue];
+      return { ...prev, daysOfWeek: newDays };
+    });
+  };
 
   const handlePaymentChange = (index, field, value) => {
     const newPayments = [...formData.payments];
@@ -100,7 +139,11 @@ const BudgetModal = ({ isOpen, onClose, onSave, onDelete, editingData }) => {
       entryData.payments = [];
     }
     if (formData.frequency === 'ponctuel' && !formData.date) { alert('Veuillez sélectionner une date pour une transaction ponctuelle.'); return; }
-    if (formData.frequency !== 'ponctuel' && formData.frequency !== 'irregulier' && formData.frequency !== 'provision' && !formData.startDate) { alert('Veuillez sélectionner une date de début pour une transaction récurrente.'); return; }
+    if (periodicFrequencies.includes(formData.frequency) && !formData.startDate) { alert('Veuillez sélectionner une date de début pour une transaction récurrente.'); return; }
+    if (formData.frequency === 'journalier' && (!formData.daysOfWeek || formData.daysOfWeek.length === 0)) {
+        alert('Veuillez sélectionner au moins un jour pour la fréquence journalière.');
+        return;
+    }
     if (formData.endDate && formData.startDate && formData.endDate < formData.startDate) { alert('La date de fin ne peut pas être antérieure à la date de début.'); return; }
     if (formData.frequency === 'provision') {
         if (!formData.provisionDetails.finalPaymentDate || !formData.provisionDetails.provisionAccountId) {
@@ -133,6 +176,14 @@ const BudgetModal = ({ isOpen, onClose, onSave, onDelete, editingData }) => {
     if (!amount) return '';
     const formattedAmount = formatCurrency(amount, settings);
     switch (frequency) {
+      case 'journalier': {
+        const orderedDays = [1, 2, 3, 4, 5, 6, 0];
+        const selectedDaysLabels = orderedDays
+          .filter(dayValue => formData.daysOfWeek?.includes(dayValue))
+          .map(dayValue => daysOfWeekOptions.find(opt => opt.value === dayValue).label.substring(0, 1))
+          .join(', ');
+        return `${formattedAmount} par jour (${selectedDaysLabels || 'aucun jour'})`;
+      }
       case 'hebdomadaire': return `${formattedAmount} par semaine`;
       case 'mensuel': return `${formattedAmount} chaque mois`;
       case 'bimestriel': return `${formattedAmount} tous les 2 mois`;
@@ -145,6 +196,27 @@ const BudgetModal = ({ isOpen, onClose, onSave, onDelete, editingData }) => {
   const handleCategoryChange = (e) => { if (e.target.value === 'add_new_category') { setIsAddCategoryModalOpen(true); } else { setFormData(prev => ({ ...prev, category: e.target.value })); } };
   const handleSaveNewCategory = (type, mainCategoryId, subCategoryName) => { dispatch({ type: 'ADD_SUB_CATEGORY', payload: { type, mainCategoryId, subCategoryName } }); setFormData(prev => ({ ...prev, category: subCategoryName })); setIsAddCategoryModalOpen(false); };
 
+  const titleConfig = {
+    edit: {
+      text: "Modifier l'entrée budgétaire",
+      className: "text-xl font-semibold text-gray-900"
+    },
+    add: {
+      revenu: {
+        text: "Ajout de nouvelle entrée",
+        className: "text-xl font-semibold bg-gradient-to-r from-green-500 to-emerald-600 bg-clip-text text-transparent"
+      },
+      depense: {
+        text: "Ajout de nouvelle sortie",
+        className: "text-xl font-semibold bg-gradient-to-r from-red-500 to-rose-600 bg-clip-text text-transparent"
+      }
+    }
+  };
+
+  const currentTitle = isEditing 
+    ? titleConfig.edit 
+    : (isAdding ? titleConfig.add[entryType] : { text: 'Nouvelle entrée budgétaire', className: 'text-xl font-semibold text-gray-900' });
+
   if (!isOpen) return null;
 
   return (
@@ -152,17 +224,19 @@ const BudgetModal = ({ isOpen, onClose, onSave, onDelete, editingData }) => {
       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
         <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
           <div className="flex items-center justify-between p-6 border-b">
-            <h2 className="text-xl font-semibold text-gray-900">{editingData ? 'Modifier l\'entrée budgétaire' : 'Nouvelle entrée budgétaire'}</h2>
+            <h2 className={currentTitle.className}>{currentTitle.text}</h2>
             <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors"><X className="w-6 h-6" /></button>
           </div>
           <form onSubmit={handleSubmit} className="p-6 space-y-6">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Type *</label>
-              <div className="flex gap-4">
-                <label className="flex items-center"><input type="radio" name="type" value="revenu" checked={formData.type === 'revenu'} onChange={(e) => setFormData(prev => ({ ...prev, type: e.target.value, category: '', supplier: '' }))} className="mr-2" disabled={formData.frequency === 'provision'} /><Building className="w-4 h-4 mr-1 text-green-600" /> Entrée</label>
-                <label className="flex items-center"><input type="radio" name="type" value="depense" checked={formData.type === 'depense'} onChange={(e) => setFormData(prev => ({ ...prev, type: e.target.value, category: '', supplier: '' }))} className="mr-2" /><Calendar className="w-4 h-4 mr-1 text-red-600" /> Sortie</label>
+            {isEditing && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Type *</label>
+                <div className="flex gap-4">
+                  <label className="flex items-center"><input type="radio" name="type" value="revenu" checked={formData.type === 'revenu'} onChange={(e) => setFormData(prev => ({ ...prev, type: e.target.value, category: '', supplier: '' }))} className="mr-2" disabled={formData.frequency === 'provision'} /><Building className="w-4 h-4 mr-1 text-green-600" /> Entrée</label>
+                  <label className="flex items-center"><input type="radio" name="type" value="depense" checked={formData.type === 'depense'} onChange={(e) => setFormData(prev => ({ ...prev, type: e.target.value, category: '', supplier: '' }))} className="mr-2" /><Calendar className="w-4 h-4 mr-1 text-red-600" /> Sortie</label>
+                </div>
               </div>
-            </div>
+            )}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Catégorie *</label>
               <select value={formData.category} onChange={handleCategoryChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" required>
@@ -171,14 +245,59 @@ const BudgetModal = ({ isOpen, onClose, onSave, onDelete, editingData }) => {
                 <option value="add_new_category" className="font-bold text-blue-600">-- Ajouter une nouvelle catégorie --</option>
               </select>
             </div>
+            
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-3">Fréquence *</label>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                {frequencyOptions.filter(opt => formData.type === 'depense' || opt.type !== 'depense').map(opt => { const Icon = opt.icon; return (<label key={opt.value} className={`flex items-center p-3 border rounded-lg cursor-pointer ${formData.frequency === opt.value ? 'bg-blue-50 border-blue-300' : 'hover:bg-gray-50'}`}><input type="radio" name="frequency" value={opt.value} checked={formData.frequency === opt.value} onChange={(e) => setFormData(prev => ({ ...prev, frequency: e.target.value }))} className="mr-3" /><Icon className="w-4 h-4 mr-2 text-blue-600" /><span className="font-medium">{opt.label}</span></label>); })}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                {mainFrequencyTypes.map(opt => {
+                  const Icon = opt.icon;
+                  return (
+                    <label key={opt.value} className={`flex items-center p-3 border rounded-lg cursor-pointer ${mainFrequencyType === opt.value ? 'bg-blue-50 border-blue-300' : 'hover:bg-gray-50'}`}>
+                      <input type="radio" name="main_frequency" checked={mainFrequencyType === opt.value} onChange={() => handleMainFrequencyChange(opt.value)} className="mr-3" />
+                      <Icon className="w-4 h-4 mr-2 text-blue-600" />
+                      <span className="font-medium">{opt.label}</span>
+                    </label>
+                  );
+                })}
+                {formData.type === 'depense' && (
+                  <label className={`flex items-center p-3 border rounded-lg cursor-pointer ${mainFrequencyType === 'provision' ? 'bg-blue-50 border-blue-300' : 'hover:bg-gray-50'}`}>
+                    <input type="radio" name="main_frequency" checked={mainFrequencyType === 'provision'} onChange={() => handleMainFrequencyChange('provision')} className="mr-3" />
+                    <PiggyBank className="w-4 h-4 mr-2 text-blue-600" />
+                    <span className="font-medium">À Provisionner</span>
+                  </label>
+                )}
               </div>
+              {mainFrequencyType === 'periodique' && (
+                <div className="mt-4 p-4 border rounded-lg bg-gray-50">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Périodicité</label>
+                  <select value={formData.frequency} onChange={(e) => setFormData(prev => ({ ...prev, frequency: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                    {periodicOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                  </select>
+                  {formData.frequency === 'journalier' && (
+                    <div className="mt-4">
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Jours d'application</label>
+                      <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                        {daysOfWeekOptions.map(day => (
+                          <label key={day.value} className="flex items-center gap-2 p-2 border rounded-md text-sm cursor-pointer hover:bg-gray-100 bg-white">
+                            <input
+                              type="checkbox"
+                              checked={formData.daysOfWeek?.includes(day.value) ?? true}
+                              onChange={() => handleDayOfWeekChange(day.value)}
+                              className="rounded text-blue-600 focus:ring-blue-500"
+                            />
+                            {day.label}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
+
             {formData.frequency === 'ponctuel' && (<div><label className="block text-sm font-medium text-gray-700 mb-2">Date du paiement *</label><input type="date" value={formData.date} onChange={(e) => setFormData(prev => ({ ...prev, date: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" required /></div>)}
-            {formData.frequency !== 'ponctuel' && formData.frequency !== 'irregulier' && formData.frequency !== 'provision' && (<div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-4 border rounded-lg bg-gray-50"><div><label className="block text-sm font-medium text-gray-700 mb-2">Date de début *</label><input type="date" value={formData.startDate} onChange={(e) => setFormData(prev => ({ ...prev, startDate: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" required /></div><div><label className="block text-sm font-medium text-gray-700 mb-2">Date de fin (optionnel)</label><input type="date" value={formData.endDate} onChange={(e) => setFormData(prev => ({ ...prev, endDate: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" min={formData.startDate} /></div></div>)}
+            
+            {mainFrequencyType === 'periodique' && (<div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-4 border rounded-lg bg-gray-50"><div><label className="block text-sm font-medium text-gray-700 mb-2">Date de début *</label><input type="date" value={formData.startDate} onChange={(e) => setFormData(prev => ({ ...prev, startDate: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" required /></div><div><label className="block text-sm font-medium text-gray-700 mb-2">Date de fin (optionnel)</label><input type="date" value={formData.endDate} onChange={(e) => setFormData(prev => ({ ...prev, endDate: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" min={formData.startDate} /></div></div>)}
             
             {formData.frequency === 'provision' && (
               <div className="space-y-4 p-4 border rounded-lg bg-gray-50">
@@ -216,7 +335,7 @@ const BudgetModal = ({ isOpen, onClose, onSave, onDelete, editingData }) => {
             
             <div><label htmlFor="tier-input" className="block text-sm font-medium text-gray-700 mb-2"><User className="w-4 h-4 inline mr-1" /> {formData.type === 'revenu' ? 'Client' : 'Fournisseur'} *</label><input id="tier-input" type="text" list="tiers-list" value={formData.supplier} onChange={(e) => setFormData(prev => ({ ...prev, supplier: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" placeholder="Saisir ou sélectionner..." required /><datalist id="tiers-list">{getAvailableTiers().map(tier => (<option key={tier.id} value={tier.name} />))}</datalist></div>
             
-            {formData.frequency !== 'irregulier' && formData.frequency !== 'provision' && (<div><label className="block text-sm font-medium text-gray-700 mb-2">Montant ({settings.currency}) *</label><input type="number" value={formData.amount} onChange={(e) => setFormData(prev => ({ ...prev, amount: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" placeholder="0.00" step="0.01" min="0" required />{formData.amount && (<p className="mt-2 text-sm text-blue-600 bg-blue-50 p-3 rounded-lg flex items-start gap-2"><AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" /><span><strong>Aperçu:</strong> {getFrequencyDescription(formData.frequency, formData.amount)} {formData.frequency !== 'ponctuel' && ` du ${new Date(formData.startDate).toLocaleDateString('fr-FR')} ${formData.endDate ? `au ${new Date(formData.endDate).toLocaleDateString('fr-FR')}` : 'indéfiniment'}.`}</span></p>)}</div>)}
+            {formData.frequency !== 'irregulier' && formData.frequency !== 'provision' && (<div><label className="block text-sm font-medium text-gray-700 mb-2">Montant ({settings.currency}) *</label><input type="number" value={formData.amount} onChange={(e) => setFormData(prev => ({ ...prev, amount: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" placeholder="0.00" step="0.01" min="0" required />{formData.amount && (<p className="mt-2 text-sm text-blue-600 bg-blue-50 p-3 rounded-lg flex items-start gap-2"><AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" /><span><strong>Aperçu:</strong> {getFrequencyDescription(formData.frequency, formData.amount)} {periodicFrequencies.includes(formData.frequency) && ` du ${new Date(formData.startDate).toLocaleDateString('fr-FR')} ${formData.endDate ? `au ${new Date(formData.endDate).toLocaleDateString('fr-FR')}` : 'indéfiniment'}.`}</span></p>)}</div>)}
             
             <div><label className="block text-sm font-medium text-gray-700 mb-2">Description (optionnel)</label><textarea value={formData.description} onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" rows="3" placeholder="Détails supplémentaires..." /></div>
             

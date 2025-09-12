@@ -253,7 +253,7 @@ const BudgetTracker = ({ activeProject, budgetEntries, actualTransactions }) => 
   // --- Start of logic moved from CashflowView.jsx ---
   const [timeUnit, setTimeUnit] = useState('week');
   const [horizonLength, setHorizonLength] = useState(6);
-  const [cashflowDrawerData, setCashflowDrawerData] = useState({ isOpen: false, transactions: [], title: '' });
+  const [cashflowDrawerData, setCashflowDrawerData] = useState({ isOpen: false, transactions: [], title: '', timeUnit: 'week' });
   const [selectedScenarios, setSelectedScenarios] = useState({});
   const projectScenarios = useMemo(() => {
     if (isConsolidated) return [];
@@ -307,6 +307,7 @@ const BudgetTracker = ({ activeProject, budgetEntries, actualTransactions }) => 
       return actual.type === 'receivable' ? sum + p.paidAmount : sum - p.paidAmount;
     }, 0);
     const calculatedStartingBalance = initialBalancesSum + netFlowOfPastPayments;
+
     const periodFlows = periods.map(periodStart => {
       const periodEnd = new Date(periodStart);
       switch (timeUnit) {
@@ -321,6 +322,11 @@ const BudgetTracker = ({ activeProject, budgetEntries, actualTransactions }) => 
       const inflows = { realized: 0, planned: 0 };
       const outflows = { realized: 0, planned: 0 };
       actualsForCalc.forEach(actual => {
+        const dueDate = new Date(actual.date);
+        if (dueDate >= periodStart && dueDate < periodEnd) {
+          if (actual.type === 'receivable') inflows.planned += actual.amount;
+          else if (actual.type === 'payable') outflows.planned += actual.amount;
+        }
         (actual.payments || []).forEach(payment => {
           const paymentDate = new Date(payment.paymentDate);
           if (paymentDate >= periodStart && paymentDate < periodEnd) {
@@ -328,13 +334,6 @@ const BudgetTracker = ({ activeProject, budgetEntries, actualTransactions }) => 
             else if (actual.type === 'payable') outflows.realized += payment.paidAmount;
           }
         });
-        const totalPaid = (actual.payments || []).reduce((sum, p) => sum + p.paidAmount, 0);
-        const remainingAmount = actual.amount - totalPaid;
-        const dueDate = new Date(actual.date);
-        if (remainingAmount > 0 && ['pending', 'partially_paid', 'partially_received'].includes(actual.status) && dueDate >= periodStart && dueDate < periodEnd) {
-          if (actual.type === 'receivable') inflows.planned += remainingAmount;
-          else if (actual.type === 'payable') outflows.planned += remainingAmount;
-        }
       });
       return {
         period: periodStart,
@@ -342,16 +341,25 @@ const BudgetTracker = ({ activeProject, budgetEntries, actualTransactions }) => 
         actualInflow: inflows.realized,
         plannedOutflow: outflows.planned,
         actualOutflow: outflows.realized,
-        totalInflow: inflows.realized + inflows.planned,
-        totalOutflow: outflows.realized + outflows.planned,
       };
     });
+
     let currentBalance = calculatedStartingBalance;
     const balanceData = [];
+    const todayForBalance = new Date();
+    todayForBalance.setHours(0,0,0,0);
+
     for (const flow of periodFlows) {
-      currentBalance = currentBalance + flow.totalInflow - flow.totalOutflow;
+      let netFlow;
+      if (flow.period < todayForBalance) {
+        netFlow = flow.actualInflow - flow.actualOutflow;
+      } else {
+        netFlow = flow.plannedInflow - flow.plannedOutflow;
+      }
+      currentBalance += netFlow;
       balanceData.push(currentBalance.toFixed(2));
     }
+    
     const labels = periods.map(p => {
         const year = p.toLocaleDateString('fr-FR', { year: '2-digit' });
         const months = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Juin', 'Juil', 'Août', 'Sep', 'Oct', 'Nov', 'Déc'];
@@ -374,6 +382,7 @@ const BudgetTracker = ({ activeProject, budgetEntries, actualTransactions }) => 
       plannedOutflows: periodFlows.map(f => f.plannedOutflow.toFixed(2)),
       actualOutflows: periodFlows.map(f => f.actualOutflow.toFixed(2)),
       balance: balanceData,
+      startingBalance: calculatedStartingBalance,
     };
   };
   const cashflowData = useMemo(() => {
@@ -415,7 +424,7 @@ const BudgetTracker = ({ activeProject, budgetEntries, actualTransactions }) => 
       const dueDate = new Date(actual.date);
       if (remainingAmount > 0 && ['pending', 'partially_paid', 'partially_received'].includes(actual.status) && dueDate >= periodStart && dueDate < periodEnd) transactionsForDrawer.push({ id: actual.id + '-planned', type: actual.type, thirdParty: actual.thirdParty, category: actual.category, amount: remainingAmount, date: actual.date, status: 'planned' });
     });
-    setCashflowDrawerData({ isOpen: true, transactions: transactionsForDrawer, title: `Détails des ${params.seriesName.toLowerCase()} - ${params.axisValue}` });
+    setCashflowDrawerData({ isOpen: true, transactions: transactionsForDrawer, title: `Détails des ${params.seriesName.toLowerCase()} - ${params.axisValue}`, timeUnit: timeUnit });
   };
   const onCashflowEvents = { 'click': handleCashflowChartClick };
   const getCashflowChartOptions = () => {
@@ -548,16 +557,7 @@ const BudgetTracker = ({ activeProject, budgetEntries, actualTransactions }) => 
           <div className="flex items-center gap-2 text-sm ml-auto">
             <span className="font-medium text-gray-600">Solde de départ calculé:</span>
             <span className="font-bold text-lg text-blue-700">
-              {cashflowData.base.balance && cashflowData.base.balance.length > 0
-                ? formatCurrency(
-                    parseFloat(cashflowData.base.balance[0]) - (
-                      (parseFloat(cashflowData.base.plannedInflows[0]) + parseFloat(cashflowData.base.actualInflows[0])) -
-                      (parseFloat(cashflowData.base.plannedOutflows[0]) + parseFloat(cashflowData.base.actualOutflows[0]))
-                    ),
-                    settings
-                  )
-                : formatCurrency(0, settings)
-              }
+              {formatCurrency(cashflowData.base.startingBalance, settings)}
             </span>
           </div>
         </div>
@@ -582,7 +582,7 @@ const BudgetTracker = ({ activeProject, budgetEntries, actualTransactions }) => 
       </div>
       <div className="my-4 flex flex-wrap items-center justify-between gap-4">
         <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
-          <div className="flex items-center gap-2"><span className="text-sm font-semibold text-gray-700 flex items-center gap-2"><Eye className="w-4 h-4"/>Colonnes:</span><label className="flex items-center gap-2 text-sm cursor-pointer"><input type="checkbox" checked={visibleColumns.budget} onChange={() => setVisibleColumns(prev => ({ ...prev, budget: !prev.budget }))} /> Budget</label><label className="flex items-center gap-2 text-sm cursor-pointer"><input type="checkbox" checked={visibleColumns.actual} onChange={() => setVisibleColumns(prev => ({ ...prev, actual: !prev.actual }))} /> Réel</label><label className="flex items-center gap-2 text-sm cursor-pointer"><input type="checkbox" checked={visibleColumns.ecart} onChange={() => setVisibleColumns(prev => ({ ...prev, ecart: !prev.ecart }))} /> Écart</label></div>
+          <div className="flex items-center gap-2"><span className="text-sm font-semibold text-gray-700 flex items-center gap-2"><Eye className="w-4 h-4"/>Colonnes:</span><label className="flex items-center gap-2 text-sm cursor-pointer"><input type="checkbox" checked={visibleColumns.budget} onChange={() => setVisibleColumns(prev => ({ ...prev, budget: !prev.budget }))} /> Prévisionnel</label><label className="flex items-center gap-2 text-sm cursor-pointer"><input type="checkbox" checked={visibleColumns.actual} onChange={() => setVisibleColumns(prev => ({ ...prev, actual: !prev.actual }))} /> Réel</label><label className="flex items-center gap-2 text-sm cursor-pointer"><input type="checkbox" checked={visibleColumns.ecart} onChange={() => setVisibleColumns(prev => ({ ...prev, ecart: !prev.ecart }))} /> Reste à payer</label></div>
           <div className="flex items-center gap-2"><span className="text-sm font-semibold text-gray-700 flex items-center gap-2"><Eye className="w-4 h-4"/>Lignes:</span><label className="flex items-center gap-2 text-sm cursor-pointer"><input type="checkbox" checked={visibleColumns.netResultRow} onChange={() => setVisibleColumns(prev => ({ ...prev, netResultRow: !prev.netResultRow }))} /> Résultat Net</label><label className="flex items-center gap-2 text-sm cursor-pointer"><input type="checkbox" checked={visibleColumns.cumulativeNetResultRow} onChange={() => setVisibleColumns(prev => ({ ...prev, cumulativeNetResultRow: !prev.cumulativeNetResultRow }))} /> Résultat Cumulé</label></div>
         </div>
         <div className="flex items-center gap-4">
@@ -611,7 +611,7 @@ const BudgetTracker = ({ activeProject, budgetEntries, actualTransactions }) => 
                 {isConsolidated && (<ResizableTh id="project" width={columnWidths.project} onResize={handleResize} className="sticky z-20" style={{ left: `${projectColLeft}px` }}>Projet</ResizableTh>)}
                 <ResizableTh id="description" width={columnWidths.description} onResize={handleResize} className="sticky z-20" style={{ left: `${descriptionColLeft}px` }}>Description</ResizableTh>
                 <th className="bg-white border-b-2" style={{ width: `${separatorWidth}px` }}></th>
-                {months.flatMap(month => [<th key={month} className="px-2 py-2 text-center font-semibold text-gray-900 border-b-2" style={{ minWidth: `${monthColumnWidth}px` }}><div className="text-base mb-1">{`${month} '${String(displayYear).slice(-2)}`}</div>{numVisibleCols > 0 && <div className="flex gap-2 justify-around text-xs font-medium text-gray-600">{visibleColumns.budget && <div className="flex-1">Budget</div>}{visibleColumns.actual && <div className="flex-1">Réel</div>}{visibleColumns.ecart && <div className="flex-1">Écart</div>}</div>}</th>, <th key={`${month}-sep`} className="bg-white border-b-2" style={{ width: `${separatorWidth}px` }}></th>])}
+                {months.flatMap(month => [<th key={month} className="px-2 py-2 text-center font-semibold text-gray-900 border-b-2" style={{ minWidth: `${monthColumnWidth}px` }}><div className="text-base mb-1">{`${month} '${String(displayYear).slice(-2)}`}</div>{numVisibleCols > 0 && <div className="flex gap-2 justify-around text-xs font-medium text-gray-600">{visibleColumns.budget && <div className="flex-1">Prév.</div>}{visibleColumns.actual && <div className="flex-1">Réel</div>}{visibleColumns.ecart && <div className="flex-1">Reste</div>}</div>}</th>, <th key={`${month}-sep`} className="bg-white border-b-2" style={{ width: `${separatorWidth}px` }}></th>])}
               </tr>
             </thead>
             <tbody>
@@ -630,7 +630,13 @@ const BudgetTracker = ({ activeProject, budgetEntries, actualTransactions }) => 
           </table>
         </div>
       </div>
-      <CashflowDetailDrawer isOpen={cashflowDrawerData.isOpen} onClose={() => setCashflowDrawerData({ isOpen: false, transactions: [], title: '' })} transactions={cashflowDrawerData.transactions} title={cashflowDrawerData.title} />
+      <CashflowDetailDrawer 
+        isOpen={cashflowDrawerData.isOpen} 
+        onClose={() => setCashflowDrawerData({ isOpen: false, transactions: [], title: '', timeUnit: 'week' })} 
+        transactions={cashflowDrawerData.transactions} 
+        title={cashflowDrawerData.title}
+        timeUnit={cashflowDrawerData.timeUnit}
+      />
     </div>
   );
 };

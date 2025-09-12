@@ -3,7 +3,7 @@ import { X, Calendar, Wallet, User, CheckCircle, Clock } from 'lucide-react';
 import { formatCurrency } from '../utils/formatting';
 import { useBudget } from '../context/BudgetContext';
 
-const CashflowDetailDrawer = ({ isOpen, onClose, transactions, title }) => {
+const CashflowDetailDrawer = ({ isOpen, onClose, transactions, title, timeUnit }) => {
   const { state } = useBudget();
   const { userCashAccounts, settings } = state;
 
@@ -13,6 +13,17 @@ const CashflowDetailDrawer = ({ isOpen, onClose, transactions, title }) => {
   const getCashAccountName = (accountId) => userCashAccounts.find(acc => acc && acc.id === accountId)?.name || accountId || 'N/A';
   const totalAmount = transactions.reduce((sum, t) => sum + t.amount, 0);
 
+  const timeUnitLabels = {
+    day: 'le jour',
+    week: 'la semaine',
+    month: 'le mois',
+    bimonthly: 'le bimestre',
+    quarterly: 'le trimestre',
+    semiannually: 'le semestre',
+    annually: 'l\'année'
+  };
+  const periodLabel = timeUnitLabels[timeUnit] || 'la période';
+
   return (
     <>
       <div className={`fixed inset-0 bg-black z-40 transition-opacity ${isOpen ? 'bg-opacity-60' : 'bg-opacity-0 pointer-events-none'}`} onClick={onClose}></div>
@@ -20,7 +31,7 @@ const CashflowDetailDrawer = ({ isOpen, onClose, transactions, title }) => {
         <div className="flex flex-col h-full">
           <div className="flex items-center justify-between p-4 border-b"><h2 className="text-lg font-semibold text-gray-800">{title}</h2><button onClick={onClose} className="p-2 rounded-full text-gray-500 hover:bg-gray-100"><X className="w-5 h-5" /></button></div>
           <div className="flex-grow p-4 overflow-y-auto bg-gray-50">
-            {transactions.length === 0 ? (<p className="text-gray-500">Aucune transaction pour cette semaine.</p>) : (
+            {transactions.length === 0 ? (<p className="text-gray-500">Aucune transaction pour cette période.</p>) : (
               <ul className="space-y-3">
                 {transactions.map(tx => (
                   <li key={tx.id} className="p-3 bg-white rounded-lg border flex">
@@ -38,7 +49,7 @@ const CashflowDetailDrawer = ({ isOpen, onClose, transactions, title }) => {
               </ul>
             )}
           </div>
-          <div className="p-4 border-t bg-gray-100"><div className="flex justify-between items-center"><span className="font-semibold text-gray-800">Total pour la semaine</span><span className="font-bold text-xl text-blue-700">{formatCurrency(totalAmount, settings)}</span></div></div>
+          <div className="p-4 border-t bg-gray-100"><div className="flex justify-between items-center"><span className="font-semibold text-gray-800">Total pour {periodLabel}</span><span className="font-bold text-xl text-blue-700">{formatCurrency(totalAmount, settings)}</span></div></div>
         </div>
       </div>
     </>

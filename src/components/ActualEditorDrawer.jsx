@@ -9,7 +9,11 @@ const ActualEditorDrawer = ({ isOpen, onClose, actualId }) => {
   const { allActuals, userCashAccounts, settings } = state;
 
   const [actual, setActual] = useState(null);
-  const [formData, setFormData] = useState({});
+  const [formData, setFormData] = useState({
+    date: '',
+    amount: '',
+    description: '',
+  });
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
 
   useEffect(() => {
@@ -19,13 +23,14 @@ const ActualEditorDrawer = ({ isOpen, onClose, actualId }) => {
       setActual(foundActual);
       if (foundActual) {
         setFormData({
-          date: foundActual.date,
-          amount: foundActual.amount,
+          date: foundActual.date || '',
+          amount: foundActual.amount ?? '',
           description: foundActual.description || '',
         });
       }
     } else {
       setActual(null);
+      setFormData({ date: '', amount: '', description: '' });
     }
   }, [isOpen, actualId, allActuals]);
 

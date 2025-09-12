@@ -336,11 +336,22 @@ const BudgetTracker = ({ activeProject, budgetEntries, actualTransactions }) => 
           else if (actual.type === 'payable') outflows.planned += remainingAmount;
         }
       });
-      return { period: periodStart, inflows: inflows.realized + inflows.planned, outflows: outflows.realized + outflows.planned };
+      return {
+        period: periodStart,
+        plannedInflow: inflows.planned,
+        actualInflow: inflows.realized,
+        plannedOutflow: outflows.planned,
+        actualOutflow: outflows.realized,
+        totalInflow: inflows.realized + inflows.planned,
+        totalOutflow: outflows.realized + outflows.planned,
+      };
     });
     let currentBalance = calculatedStartingBalance;
     const balanceData = [];
-    for (const flow of periodFlows) { currentBalance = currentBalance + flow.inflows - flow.outflows; balanceData.push(currentBalance.toFixed(2)); }
+    for (const flow of periodFlows) {
+      currentBalance = currentBalance + flow.totalInflow - flow.totalOutflow;
+      balanceData.push(currentBalance.toFixed(2));
+    }
     const labels = periods.map(p => {
         const year = p.toLocaleDateString('fr-FR', { year: '2-digit' });
         const months = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Juin', 'Juil', 'Août', 'Sep', 'Oct', 'Nov', 'Déc'];
@@ -355,7 +366,15 @@ const BudgetTracker = ({ activeProject, budgetEntries, actualTransactions }) => 
             default: return '';
         }
     });
-    return { labels, periods, inflows: periodFlows.map(w => w.inflows.toFixed(2)), outflows: periodFlows.map(w => w.outflows.toFixed(2)), balance: balanceData };
+    return {
+      labels,
+      periods,
+      plannedInflows: periodFlows.map(f => f.plannedInflow.toFixed(2)),
+      actualInflows: periodFlows.map(f => f.actualInflow.toFixed(2)),
+      plannedOutflows: periodFlows.map(f => f.plannedOutflow.toFixed(2)),
+      actualOutflows: periodFlows.map(f => f.actualOutflow.toFixed(2)),
+      balance: balanceData,
+    };
   };
   const cashflowData = useMemo(() => {
     const baseFlow = calculateCashflowData(baseActuals);
@@ -370,7 +389,7 @@ const BudgetTracker = ({ activeProject, budgetEntries, actualTransactions }) => 
     return { base: baseFlow, scenarios: scenarioFlows };
   }, [baseActuals, projectScenarios, selectedScenarios, scenarioEntries, activeProjectId, allEntries, horizonLength, timeUnit, userCashAccounts]);
   const handleCashflowChartClick = (params) => {
-    if (params.seriesName !== 'Entrées' && params.seriesName !== 'Sorties') return;
+    if (!params.seriesName.includes('Entrées') && !params.seriesName.includes('Sorties')) return;
     const periodIndex = params.dataIndex;
     const periodStart = cashflowData.base.periods[periodIndex];
     const periodEnd = new Date(periodStart);
@@ -383,7 +402,7 @@ const BudgetTracker = ({ activeProject, budgetEntries, actualTransactions }) => 
         case 'semiannually': periodEnd.setMonth(periodEnd.getMonth() + 6); break;
         case 'annually': periodEnd.setFullYear(periodEnd.getFullYear() + 1); break;
     }
-    const actualType = params.seriesName === 'Entrées' ? 'receivable' : 'payable';
+    const actualType = params.seriesName.includes('Entrées') ? 'receivable' : 'payable';
     const transactionsForDrawer = [];
     baseActuals.forEach(actual => {
       if (actual.type !== actualType) return;
@@ -402,15 +421,14 @@ const BudgetTracker = ({ activeProject, budgetEntries, actualTransactions }) => 
   const getCashflowChartOptions = () => {
     const BASE_BALANCE_COLOR = '#3b82f6';
     const SCENARIO_COLORS = ['#14b8a6', '#f97316', '#a855f7'];
-    const inflowColor = { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: 'rgba(52, 211, 153, 0.8)' }, { offset: 1, color: 'rgba(5, 150, 105, 0.8)' }] };
-    const outflowColor = { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: 'rgba(248, 113, 113, 0.8)' }, { offset: 1, color: 'rgba(220, 38, 38, 0.8)' }] };
-    const inflowFutureColor = { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: 'rgba(52, 211, 153, 0.4)' }, { offset: 1, color: 'rgba(5, 150, 105, 0.4)' }] };
-    const outflowFutureColor = { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: 'rgba(248, 113, 113, 0.4)' }, { offset: 1, color: 'rgba(220, 38, 38, 0.4)' }] };
+    
     const series = [
-      { name: 'Entrées', type: 'bar', data: cashflowData.base.inflows, emphasis: { focus: 'series' } },
-      { name: 'Sorties', type: 'bar', data: cashflowData.base.outflows, emphasis: { focus: 'series' } },
-      { name: 'Solde de trésorerie', type: 'line', smooth: true, data: cashflowData.base.balance, symbolSize: 8, color: BASE_BALANCE_COLOR, lineStyle: { width: 3, shadowColor: 'rgba(0, 0, 0, 0.2)', shadowBlur: 10, shadowOffsetY: 5 }, emphasis: { focus: 'series', scale: 1.2 } },
-      ...cashflowData.scenarios.map((scenario, index) => ({ name: scenario.name, type: 'line', smooth: true, data: scenario.balance, symbolSize: 8, color: SCENARIO_COLORS[index % SCENARIO_COLORS.length], lineStyle: { width: 3, type: 'dashed', shadowColor: 'rgba(0, 0, 0, 0.1)', shadowBlur: 8, shadowOffsetY: 3 }, emphasis: { focus: 'series', scale: 1.2 } }))
+      { name: 'Entrées Prévues', type: 'bar', data: cashflowData.base.plannedInflows, itemStyle: { color: 'rgba(74, 222, 128, 0.6)' }, barGap: '0%', barCategoryGap: '20%' },
+      { name: 'Entrées Réelles', type: 'bar', data: cashflowData.base.actualInflows, itemStyle: { color: '#22c55e' } },
+      { name: 'Sorties Prévues', type: 'bar', data: cashflowData.base.plannedOutflows, itemStyle: { color: 'rgba(252, 165, 165, 0.6)' } },
+      { name: 'Sorties Réelles', type: 'bar', data: cashflowData.base.actualOutflows, itemStyle: { color: '#ef4444' } },
+      { name: 'Solde de trésorerie', type: 'line', yAxisIndex: 1, smooth: true, data: cashflowData.base.balance, symbolSize: 8, color: BASE_BALANCE_COLOR, lineStyle: { width: 3, shadowColor: 'rgba(0, 0, 0, 0.2)', shadowBlur: 10, shadowOffsetY: 5 }, emphasis: { focus: 'series', scale: 1.2 } },
+      ...cashflowData.scenarios.map((scenario, index) => ({ name: scenario.name, type: 'line', yAxisIndex: 1, smooth: true, data: scenario.balance, symbolSize: 8, color: SCENARIO_COLORS[index % SCENARIO_COLORS.length], lineStyle: { width: 3, type: 'dashed', shadowColor: 'rgba(0, 0, 0, 0.1)', shadowBlur: 8, shadowOffsetY: 3 }, emphasis: { focus: 'series', scale: 1.2 } }))
     ];
     const markLineData = timeUnit === 'day' ? [{ xAxis: 2, label: { show: true, formatter: 'Aujourd\'hui', position: 'insideStartTop', color: '#4a5568' } }] : [{ xAxis: 2, label: { show: true, formatter: 'Aujourd\'hui', position: 'insideStartTop', color: '#4a5568' } }];
     return {
@@ -418,12 +436,11 @@ const BudgetTracker = ({ activeProject, budgetEntries, actualTransactions }) => 
       legend: { data: series.map(s => s.name), bottom: 10, type: 'scroll', icon: 'circle' },
       grid: { left: '3%', right: '4%', bottom: '15%', containLabel: true },
       xAxis: [{ type: 'category', boundaryGap: true, data: cashflowData.base.labels, axisLine: { show: false }, axisTick: { show: false }, splitLine: { show: false }, axisLabel: { color: '#4a5568' }, markLine: { symbol: 'none', silent: true, lineStyle: { type: 'dashed', color: '#9ca3af' }, data: markLineData } }],
-      yAxis: [{ type: 'value', axisLabel: { formatter: (value) => formatCurrency(value, { ...settings, displayUnit: 'standard' }), color: '#4a5568' }, splitLine: { lineStyle: { type: 'dashed', color: '#e2e8f0' } }, axisLine: { show: false } }],
-      series,
-      visualMap: [
-        { show: false, seriesIndex: 0, dimension: 0, pieces: [{ lte: 2, color: inflowColor }, { gt: 2, color: inflowFutureColor }] },
-        { show: false, seriesIndex: 1, dimension: 0, pieces: [{ lte: 2, color: outflowColor }, { gt: 2, color: outflowFutureColor }] }
+      yAxis: [
+        { type: 'value', name: 'Flux (Entrées/Sorties)', axisLabel: { formatter: (value) => formatCurrency(value, { ...settings, displayUnit: 'standard' }), color: '#4a5568' }, splitLine: { lineStyle: { type: 'dashed', color: '#e2e8f0' } }, axisLine: { show: false } },
+        { type: 'value', name: 'Solde', axisLabel: { formatter: (value) => formatCurrency(value, { ...settings, displayUnit: 'standard' }), color: '#4a5568' }, splitLine: { show: false }, axisLine: { show: false } }
       ],
+      series,
       animationDurationUpdate: 700,
       animationEasingUpdate: 'cubicInOut',
     };
@@ -530,7 +547,18 @@ const BudgetTracker = ({ activeProject, budgetEntries, actualTransactions }) => 
           </div>
           <div className="flex items-center gap-2 text-sm ml-auto">
             <span className="font-medium text-gray-600">Solde de départ calculé:</span>
-            <span className="font-bold text-lg text-blue-700">{formatCurrency(cashflowData.base.balance[0] - (cashflowData.base.inflows[0] - cashflowData.base.outflows[0]), settings)}</span>
+            <span className="font-bold text-lg text-blue-700">
+              {cashflowData.base.balance && cashflowData.base.balance.length > 0
+                ? formatCurrency(
+                    parseFloat(cashflowData.base.balance[0]) - (
+                      (parseFloat(cashflowData.base.plannedInflows[0]) + parseFloat(cashflowData.base.actualInflows[0])) -
+                      (parseFloat(cashflowData.base.plannedOutflows[0]) + parseFloat(cashflowData.base.actualOutflows[0]))
+                    ),
+                    settings
+                  )
+                : formatCurrency(0, settings)
+              }
+            </span>
           </div>
         </div>
         {!isConsolidated && projectScenarios.length > 0 && (

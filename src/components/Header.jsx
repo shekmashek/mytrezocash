@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { BarChart3, ArrowDownUp, HandCoins, LayoutDashboard, Cog, Globe, Users, FolderKanban, Wallet, Layers, PieChart, BookOpen, Table, Archive, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { BarChart3, ArrowDownUp, HandCoins, LayoutDashboard, Cog, Globe, Users, FolderKanban, Wallet, Layers, PieChart, BookOpen, Table, Archive, PanelLeftClose, PanelLeftOpen, Clock, Calendar } from 'lucide-react';
 import { useBudget } from '../context/BudgetContext';
 
 const NavLink = ({ item, isCollapsed, isActive, onClick }) => {
@@ -53,6 +53,8 @@ const Header = ({ isCollapsed, onToggleCollapse, onOpenSettingsDrawer }) => {
   const [customCurrency, setCustomCurrency] = useState('');
   const [isCustom, setIsCustom] = useState(false);
   const predefinedCurrencies = ['€', '$', '£', 'Ar'];
+
+  const timeUnitOptions = { day: 'jours', week: 'semaines', month: 'mois', bimonthly: 'bimestres', quarterly: 'trimestres', semiannually: 'semestres', annually: 'années' };
 
   useEffect(() => {
     if (predefinedCurrencies.includes(settings.currency)) {
@@ -195,7 +197,7 @@ const Header = ({ isCollapsed, onToggleCollapse, onOpenSettingsDrawer }) => {
                     )}
                 </li>
                 <li className="text-sm px-2 py-2">
-                    <label className="block font-medium text-gray-600 mb-1">Unité</label>
+                    <label className="block font-medium text-gray-600 mb-1">Unité d'affichage</label>
                     <select 
                       value={settings.displayUnit || 'standard'} 
                       onChange={(e) => handleSettingsChange('displayUnit', e.target.value)} 
@@ -216,6 +218,41 @@ const Header = ({ isCollapsed, onToggleCollapse, onOpenSettingsDrawer }) => {
                       <option value={0}>0</option>
                       <option value={1}>1</option>
                       <option value={2}>2</option>
+                    </select>
+                </li>
+                <li className="text-sm px-2 py-2">
+                    <label className="block font-medium text-gray-600 mb-1 flex items-center gap-2">
+                        <Calendar className="w-5 h-5 text-green-500" />
+                        Unité d'analyse
+                    </label>
+                    <select 
+                        value={settings.timeUnit || 'month'} 
+                        onChange={(e) => handleSettingsChange('timeUnit', e.target.value)} 
+                        className="w-full text-sm rounded-md border-gray-300 focus:ring-blue-500 focus:border-blue-500 py-1"
+                    >
+                        <option value="day">Jour</option>
+                        <option value="week">Semaine</option>
+                        <option value="month">Mois</option>
+                        <option value="bimonthly">Bimestre</option>
+                        <option value="quarterly">Trimestre</option>
+                        <option value="semiannually">Semestre</option>
+                        <option value="annually">Année</option>
+                    </select>
+                </li>
+                <li className="text-sm px-2 py-2">
+                    <label className="block font-medium text-gray-600 mb-1 flex items-center gap-2">
+                        <Clock className="w-5 h-5 text-orange-500" />
+                        Horizon d'analyse
+                    </label>
+                    <select 
+                        value={settings.horizonLength || 12} 
+                        onChange={(e) => handleSettingsChange('horizonLength', Number(e.target.value))} 
+                        className="w-full text-sm rounded-md border-gray-300 focus:ring-blue-500 focus:border-blue-500 py-1"
+                    >
+                        <option value={6}>6 {timeUnitOptions[settings.timeUnit]}</option>
+                        <option value={8}>8 {timeUnitOptions[settings.timeUnit]}</option>
+                        <option value={10}>10 {timeUnitOptions[settings.timeUnit]}</option>
+                        <option value={12}>12 {timeUnitOptions[settings.timeUnit]}</option>
                     </select>
                 </li>
             </ul>

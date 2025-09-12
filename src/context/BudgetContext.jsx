@@ -86,7 +86,9 @@ const initialTiers = [];
 const initialSettings = { 
   displayUnit: 'standard',
   decimalPlaces: 2,
-  currency: '€'
+  currency: '€',
+  timeUnit: 'month',
+  horizonLength: 12,
 };
 
 const initialScenarios = [];
@@ -807,8 +809,12 @@ const loadInitialState = () => {
                 parsedState.currentView = 'dashboard';
             }
             
-            if (parsedState.settings && !parsedState.settings.currency) {
-                parsedState.settings.currency = '€';
+            if (parsedState.settings) {
+                if (!parsedState.settings.currency) parsedState.settings.currency = '€';
+                if (!parsedState.settings.timeUnit) parsedState.settings.timeUnit = 'month';
+                if (!parsedState.settings.horizonLength) parsedState.settings.horizonLength = 12;
+            } else {
+                parsedState.settings = initialSettings;
             }
             
             if (!parsedState.displayYear) {

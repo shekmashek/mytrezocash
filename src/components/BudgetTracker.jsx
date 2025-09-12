@@ -13,6 +13,8 @@ const getStartOfWeek = (date) => { const d = new Date(date); const day = d.getDa
 const BudgetTracker = ({ activeProject, budgetEntries, actualTransactions }) => {
   const { state, dispatch } = useBudget();
   const { projects, categories, settings, displayYear, userCashAccounts, scenarios, allEntries, allActuals, scenarioEntries, activeProjectId } = state;
+  const { timeUnit, horizonLength } = settings;
+
   const [searchTerm, setSearchTerm] = useState('');
   const [visibleColumns, setVisibleColumns] = useState({
     budget: true,
@@ -126,8 +128,6 @@ const BudgetTracker = ({ activeProject, budgetEntries, actualTransactions }) => 
   }, [filteredBudgetEntries, categories]);
 
   // --- Start of logic moved from CashflowView.jsx ---
-  const [timeUnit, setTimeUnit] = useState('month');
-  const [horizonLength, setHorizonLength] = useState(12);
   const [cashflowDrawerData, setCashflowDrawerData] = useState({ isOpen: false, transactions: [], title: '', timeUnit: 'week' });
   const [selectedScenarios, setSelectedScenarios] = useState({});
   const projectScenarios = useMemo(() => {
@@ -454,7 +454,6 @@ const BudgetTracker = ({ activeProject, budgetEntries, actualTransactions }) => 
       animationEasingUpdate: 'cubicInOut',
     };
   };
-  const timeUnitOptions = { day: 'jours', week: 'semaines', month: 'mois', bimonthly: 'bimestres', quarterly: 'trimestres', semiannually: 'semestres', annually: 'années' };
   // --- End of logic moved from CashflowView.jsx ---
 
   const getPeriodEndDate = (start, unit) => {
@@ -617,40 +616,9 @@ const BudgetTracker = ({ activeProject, budgetEntries, actualTransactions }) => 
     <div className="container mx-auto p-6 max-w-full">
       <AnnualGoalsTracker activeProject={activeProject} budgetEntries={budgetEntries} displayYear={displayYear} />
       
-      <div className="bg-gray-100 p-3 rounded-lg mb-6">
-        <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-4">
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-            <div className="flex items-center gap-2">
-              <label className="text-sm font-medium text-gray-600">Unité:</label>
-              <select value={timeUnit} onChange={(e) => setTimeUnit(e.target.value)} className="px-2 py-1 border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 text-sm">
-                <option value="day">Jour</option>
-                <option value="week">Semaine</option>
-                <option value="month">Mois</option>
-                <option value="bimonthly">Bimestre</option>
-                <option value="quarterly">Trimestre</option>
-                <option value="semiannually">Semestre</option>
-                <option value="annually">Année</option>
-              </select>
-            </div>
-            <div className="flex items-center gap-2">
-              <label className="text-sm font-medium text-gray-600">Horizon:</label>
-              <select value={horizonLength} onChange={(e) => setHorizonLength(Number(e.target.value))} className="px-2 py-1 border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 text-sm">
-                <option value={6}>6 {timeUnitOptions[timeUnit]}</option>
-                <option value={8}>8 {timeUnitOptions[timeUnit]}</option>
-                <option value={10}>10 {timeUnitOptions[timeUnit]}</option>
-                <option value={12}>12 {timeUnitOptions[timeUnit]}</option>
-              </select>
-            </div>
-          </div>
-          <div className="flex items-center gap-2 text-sm ml-auto">
-            <span className="font-medium text-gray-600">Solde de départ calculé:</span>
-            <span className="font-bold text-lg text-blue-700">
-              {formatCurrency(cashflowData.base.startingBalance, settings)}
-            </span>
-          </div>
-        </div>
-        {!isConsolidated && projectScenarios.length > 0 && (
-          <div className="mt-3 pt-3 border-t border-gray-200">
+      {(!isConsolidated && projectScenarios.length > 0) && (
+        <div className="bg-gray-100 p-3 rounded-lg mb-6">
+          <div>
             <h4 className="text-sm font-medium text-gray-700 mb-2 flex items-center gap-2"><Layers className="w-4 h-4" /> Afficher les Scénarios</h4>
             <div className="flex flex-wrap gap-x-6 gap-y-2">
               {projectScenarios.map(scenario => (
@@ -661,8 +629,8 @@ const BudgetTracker = ({ activeProject, budgetEntries, actualTransactions }) => 
               ))}
             </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
       <div className="bg-white p-6 rounded-lg shadow mb-8"><ReactECharts option={getCashflowChartOptions()} style={{ height: '500px', width: '100%' }} onEvents={onCashflowEvents} /></div>
 
       <div className="mt-8 mb-4 p-4 bg-gray-50 border border-gray-200 text-gray-700 rounded-lg text-sm flex items-start gap-3">

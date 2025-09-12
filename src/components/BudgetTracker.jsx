@@ -491,7 +491,77 @@ const BudgetTracker = ({ activeProject, budgetEntries, actualTransactions }) => 
     ];
     const markLineData = timeUnit === 'day' ? [{ xAxis: 2, label: { show: true, formatter: 'Aujourd\'hui', position: 'insideStartTop', color: '#4a5568' } }] : [{ xAxis: 2, label: { show: true, formatter: 'Aujourd\'hui', position: 'insideStartTop', color: '#4a5568' } }];
     return {
-      tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' }, backgroundColor: 'rgba(255, 255, 255, 0.95)', borderColor: '#e2e8f0', borderWidth: 1, borderRadius: 8, textStyle: { color: '#1a202c' }, padding: [10, 15], extraCssText: 'box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1); backdrop-filter: blur(4px);', formatter: (params) => { let tooltip = `${params[0].axisValue}<br/>`; params.forEach(param => { tooltip += `${param.marker} ${param.seriesName}: <strong>${formatCurrency(param.value, settings)}</strong><br/>`; }); return tooltip; } },
+      tooltip: { 
+        trigger: 'axis', 
+        axisPointer: { type: 'shadow' }, 
+        backgroundColor: 'rgba(255, 255, 255, 0.95)', 
+        borderColor: '#e2e8f0', 
+        borderWidth: 1, 
+        borderRadius: 8, 
+        textStyle: { color: '#1a202c' }, 
+        padding: [10, 15], 
+        extraCssText: 'box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1); backdrop-filter: blur(4px);', 
+        formatter: (params) => {
+          const data = {};
+          params.forEach(p => {
+              data[p.seriesName] = parseFloat(p.value || 0);
+          });
+      
+          const entreeReel = data['Réalisé (Entrées)'] || 0;
+          const entreeReste = data['Reste à recevoir'] || 0;
+          const entreePrev = entreeReel + entreeReste;
+      
+          const sortieReel = data['Réalisé (Sorties)'] || 0;
+          const sortieReste = data['Reste à payer'] || 0;
+          const sortiePrev = sortieReel + sortieReste;
+      
+          const tresorerieFin = data['Solde de trésorerie'] || 0;
+          
+          const periodIndex = params[0].dataIndex;
+          const tresorerieDebut = periodIndex > 0 
+            ? parseFloat(cashflowData.base.balance[periodIndex - 1] || 0)
+            : cashflowData.base.startingBalance;
+      
+          const renderRow = (label, value) => {
+              return `<div style="display: flex; justify-content: space-between; clear: both;"><span>${label}</span><strong style="margin-left: 16px;">${formatCurrency(value, settings)}</strong></div>`;
+          };
+          
+          let tooltip = `<div style="font-size: 14px; font-weight: bold; margin-bottom: 8px;">${params[0].axisValue}</div>`;
+          
+          tooltip += `<div style="border-bottom: 1px solid #e2e8f0; padding-bottom: 8px; margin-bottom: 8px;">`;
+          tooltip += renderRow('Trésorerie Début', tresorerieDebut);
+          tooltip += `</div>`;
+
+          tooltip += `<div style="margin-bottom: 10px;">`;
+          tooltip += `<div style="font-weight: bold; color: #16a34a; margin-bottom: 4px;">ENTRÉES</div>`;
+          tooltip += renderRow('Entrée prév.', entreePrev);
+          tooltip += renderRow('Entrée Réel', entreeReel);
+          tooltip += renderRow('Reste à recevoir', entreeReste);
+          tooltip += `</div>`;
+      
+          tooltip += `<div style="margin-bottom: 10px;">`;
+          tooltip += `<div style="font-weight: bold; color: #dc2626; margin-bottom: 4px;">SORTIES</div>`;
+          tooltip += renderRow('Sorties prév.', sortiePrev);
+          tooltip += renderRow('Sortie Réel', sortieReel);
+          tooltip += renderRow('Sorties à faire', sortieReste);
+          tooltip += `</div>`;
+          
+          tooltip += `<div style="border-top: 1px solid #e2e8f0; padding-top: 8px; margin-top: 8px;">`;
+          tooltip += `<div style="display: flex; justify-content: space-between; font-weight: bold; color: #2563eb;"><span>TRÉSORERIE FIN</span><strong>${formatCurrency(tresorerieFin, settings)}</strong></div>`;
+          tooltip += `</div>`;
+      
+          const scenarioParams = params.filter(p => p.seriesName !== 'Réalisé (Entrées)' && p.seriesName !== 'Reste à recevoir' && p.seriesName !== 'Réalisé (Sorties)' && p.seriesName !== 'Reste à payer' && p.seriesName !== 'Solde de trésorerie');
+          if(scenarioParams.length > 0) {
+              tooltip += `<div style="border-top: 1px solid #e2e8f0; padding-top: 8px; margin-top: 8px;">`;
+              scenarioParams.forEach(p => {
+                  tooltip += `<div style="display: flex; justify-content: space-between; color: ${p.color};"><span>${p.seriesName}</span><strong>${formatCurrency(p.value, settings)}</strong></div>`;
+              });
+              tooltip += `</div>`;
+          }
+      
+          return tooltip;
+        } 
+      },
       legend: { data: series.map(s => s.name), bottom: 10, type: 'scroll', icon: 'circle' },
       grid: { left: '3%', right: '4%', bottom: '15%', containLabel: true },
       xAxis: [{ type: 'category', data: cashflowData.base.labels, axisLine: { show: false }, axisTick: { show: false }, splitLine: { show: false }, axisLabel: { color: '#4a5568' }, markLine: { symbol: 'none', silent: true, lineStyle: { type: 'dashed', color: '#9ca3af' }, data: markLineData } }],

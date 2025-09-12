@@ -339,8 +339,10 @@ const BudgetTracker = ({ activeProject, budgetEntries, actualTransactions }) => 
         period: periodStart,
         plannedInflow: inflows.planned,
         actualInflow: inflows.realized,
+        remainingInflow: Math.max(0, inflows.planned - inflows.realized),
         plannedOutflow: outflows.planned,
         actualOutflow: outflows.realized,
+        remainingOutflow: Math.max(0, outflows.planned - outflows.realized),
       };
     });
 
@@ -377,10 +379,10 @@ const BudgetTracker = ({ activeProject, budgetEntries, actualTransactions }) => 
     return {
       labels,
       periods,
-      plannedInflows: periodFlows.map(f => f.plannedInflow.toFixed(2)),
       actualInflows: periodFlows.map(f => f.actualInflow.toFixed(2)),
-      plannedOutflows: periodFlows.map(f => f.plannedOutflow.toFixed(2)),
+      remainingInflows: periodFlows.map(f => f.remainingInflow.toFixed(2)),
       actualOutflows: periodFlows.map(f => f.actualOutflow.toFixed(2)),
+      remainingOutflows: periodFlows.map(f => f.remainingOutflow.toFixed(2)),
       balance: balanceData,
       startingBalance: calculatedStartingBalance,
     };
@@ -400,7 +402,11 @@ const BudgetTracker = ({ activeProject, budgetEntries, actualTransactions }) => 
   
   const handleCashflowChartClick = (params) => {
     const { seriesName, dataIndex, axisValue } = params;
-    if (!seriesName.includes('Entrées') && !seriesName.includes('Sorties')) return;
+    
+    const isIncome = seriesName.includes('Entrées') || seriesName.includes('recevoir');
+    const isExpense = seriesName.includes('Sorties') || seriesName.includes('payer');
+    
+    if (!isIncome && !isExpense) return;
 
     const periodStart = cashflowData.base.periods[dataIndex];
     const periodEnd = new Date(periodStart);
@@ -417,9 +423,8 @@ const BudgetTracker = ({ activeProject, budgetEntries, actualTransactions }) => 
     let transactionsForDrawer = [];
     const title = `Détails pour ${seriesName} - ${axisValue}`;
 
-    const isPlanned = seriesName.includes('Prévues');
-    const isActual = seriesName.includes('Réelles');
-    const isIncome = seriesName.includes('Entrées');
+    const isActual = seriesName.includes('Réalisé');
+    const isPlanned = seriesName.includes('Reste à');
     const actualType = isIncome ? 'receivable' : 'payable';
     
     if (isActual) {
@@ -446,15 +451,19 @@ const BudgetTracker = ({ activeProject, budgetEntries, actualTransactions }) => 
             if (actual.type !== actualType) return;
             const dueDate = new Date(actual.date);
             if (dueDate >= periodStart && dueDate < periodEnd) {
-                transactionsForDrawer.push({
-                    id: actual.id + '-planned',
-                    type: actual.type,
-                    thirdParty: actual.thirdParty,
-                    category: actual.category,
-                    amount: actual.amount,
-                    date: actual.date,
-                    status: 'planned'
-                });
+                const totalPaid = (actual.payments || []).reduce((sum, p) => sum + p.paidAmount, 0);
+                const remainingAmount = actual.amount - totalPaid;
+                if (remainingAmount > 0) {
+                    transactionsForDrawer.push({
+                        id: actual.id + '-planned',
+                        type: actual.type,
+                        thirdParty: actual.thirdParty,
+                        category: actual.category,
+                        amount: remainingAmount,
+                        date: actual.date,
+                        status: 'planned'
+                    });
+                }
             }
         });
     }
@@ -473,19 +482,19 @@ const BudgetTracker = ({ activeProject, budgetEntries, actualTransactions }) => 
     const SCENARIO_COLORS = ['#14b8a6', '#f97316', '#a855f7'];
     
     const series = [
-      { name: 'Entrées Prévues', type: 'bar', data: cashflowData.base.plannedInflows, itemStyle: { color: 'rgba(74, 222, 128, 0.6)' }, barGap: '0%', barCategoryGap: '20%' },
-      { name: 'Entrées Réelles', type: 'bar', data: cashflowData.base.actualInflows, itemStyle: { color: '#22c55e' } },
-      { name: 'Sorties Prévues', type: 'bar', data: cashflowData.base.plannedOutflows, itemStyle: { color: 'rgba(252, 165, 165, 0.6)' } },
-      { name: 'Sorties Réelles', type: 'bar', data: cashflowData.base.actualOutflows, itemStyle: { color: '#ef4444' } },
+      { name: 'Réalisé (Entrées)', type: 'bar', stack: 'Entrées', emphasis: { focus: 'series' }, itemStyle: { color: '#22c55e' }, data: cashflowData.base.actualInflows },
+      { name: 'Reste à recevoir', type: 'bar', stack: 'Entrées', emphasis: { focus: 'series' }, itemStyle: { color: '#a7f3d0', decal: { symbol: 'rect', symbolSize: 1, color: 'rgba(0, 0, 0, 0.15)', dashArrayX: [1, 0], dashArrayY: [4, 3], rotation: Math.PI / 4 } }, data: cashflowData.base.remainingInflows },
+      { name: 'Réalisé (Sorties)', type: 'bar', stack: 'Sorties', emphasis: { focus: 'series' }, itemStyle: { color: '#ef4444' }, data: cashflowData.base.actualOutflows },
+      { name: 'Reste à payer', type: 'bar', stack: 'Sorties', emphasis: { focus: 'series' }, itemStyle: { color: '#fecaca', decal: { symbol: 'rect', symbolSize: 1, color: 'rgba(0, 0, 0, 0.15)', dashArrayX: [1, 0], dashArrayY: [4, 3], rotation: Math.PI / 4 } }, data: cashflowData.base.remainingOutflows },
       { name: 'Solde de trésorerie', type: 'line', yAxisIndex: 1, smooth: true, data: cashflowData.base.balance, symbolSize: 8, color: BASE_BALANCE_COLOR, lineStyle: { width: 3, shadowColor: 'rgba(0, 0, 0, 0.2)', shadowBlur: 10, shadowOffsetY: 5 }, emphasis: { focus: 'series', scale: 1.2 } },
       ...cashflowData.scenarios.map((scenario, index) => ({ name: scenario.name, type: 'line', yAxisIndex: 1, smooth: true, data: scenario.balance, symbolSize: 8, color: SCENARIO_COLORS[index % SCENARIO_COLORS.length], lineStyle: { width: 3, type: 'dashed', shadowColor: 'rgba(0, 0, 0, 0.1)', shadowBlur: 8, shadowOffsetY: 3 }, emphasis: { focus: 'series', scale: 1.2 } }))
     ];
     const markLineData = timeUnit === 'day' ? [{ xAxis: 2, label: { show: true, formatter: 'Aujourd\'hui', position: 'insideStartTop', color: '#4a5568' } }] : [{ xAxis: 2, label: { show: true, formatter: 'Aujourd\'hui', position: 'insideStartTop', color: '#4a5568' } }];
     return {
-      tooltip: { trigger: 'axis', axisPointer: { type: 'cross', label: { backgroundColor: '#2d3748' } }, backgroundColor: 'rgba(255, 255, 255, 0.95)', borderColor: '#e2e8f0', borderWidth: 1, borderRadius: 8, textStyle: { color: '#1a202c' }, padding: [10, 15], extraCssText: 'box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1); backdrop-filter: blur(4px);', formatter: (params) => { let tooltip = `${params[0].axisValue}<br/>`; params.forEach(param => { tooltip += `${param.marker} ${param.seriesName}: <strong>${formatCurrency(param.value, settings)}</strong><br/>`; }); return tooltip; } },
+      tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' }, backgroundColor: 'rgba(255, 255, 255, 0.95)', borderColor: '#e2e8f0', borderWidth: 1, borderRadius: 8, textStyle: { color: '#1a202c' }, padding: [10, 15], extraCssText: 'box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1); backdrop-filter: blur(4px);', formatter: (params) => { let tooltip = `${params[0].axisValue}<br/>`; params.forEach(param => { tooltip += `${param.marker} ${param.seriesName}: <strong>${formatCurrency(param.value, settings)}</strong><br/>`; }); return tooltip; } },
       legend: { data: series.map(s => s.name), bottom: 10, type: 'scroll', icon: 'circle' },
       grid: { left: '3%', right: '4%', bottom: '15%', containLabel: true },
-      xAxis: [{ type: 'category', boundaryGap: true, data: cashflowData.base.labels, axisLine: { show: false }, axisTick: { show: false }, splitLine: { show: false }, axisLabel: { color: '#4a5568' }, markLine: { symbol: 'none', silent: true, lineStyle: { type: 'dashed', color: '#9ca3af' }, data: markLineData } }],
+      xAxis: [{ type: 'category', data: cashflowData.base.labels, axisLine: { show: false }, axisTick: { show: false }, splitLine: { show: false }, axisLabel: { color: '#4a5568' }, markLine: { symbol: 'none', silent: true, lineStyle: { type: 'dashed', color: '#9ca3af' }, data: markLineData } }],
       yAxis: [
         { type: 'value', name: 'Flux (Entrées/Sorties)', axisLabel: { formatter: (value) => formatCurrency(value, { ...settings, displayUnit: 'standard' }), color: '#4a5568' }, splitLine: { lineStyle: { type: 'dashed', color: '#e2e8f0' } }, axisLine: { show: false } },
         { type: 'value', name: 'Solde', axisLabel: { formatter: (value) => formatCurrency(value, { ...settings, displayUnit: 'standard' }), color: '#4a5568' }, splitLine: { show: false }, axisLine: { show: false } }
@@ -618,7 +627,7 @@ const BudgetTracker = ({ activeProject, budgetEntries, actualTransactions }) => 
       <div className="my-4 flex flex-wrap items-center justify-between gap-4">
         <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
           <div className="flex items-center gap-2"><span className="text-sm font-semibold text-gray-700 flex items-center gap-2"><Eye className="w-4 h-4"/>Colonnes:</span><label className="flex items-center gap-2 text-sm cursor-pointer"><input type="checkbox" checked={visibleColumns.budget} onChange={() => setVisibleColumns(prev => ({ ...prev, budget: !prev.budget }))} /> Prévisionnel</label><label className="flex items-center gap-2 text-sm cursor-pointer"><input type="checkbox" checked={visibleColumns.actual} onChange={() => setVisibleColumns(prev => ({ ...prev, actual: !prev.actual }))} /> Réel</label><label className="flex items-center gap-2 text-sm cursor-pointer"><input type="checkbox" checked={visibleColumns.ecart} onChange={() => setVisibleColumns(prev => ({ ...prev, ecart: !prev.ecart }))} /> Reste à payer</label></div>
-          <div className="flex items-center gap-2"><span className="text-sm font-semibold text-gray-700 flex items-center gap-2"><Eye className="w-4 h-4"/>Lignes:</span><label className="flex items-center gap-2 text-sm cursor-pointer"><input type="checkbox" checked={visibleColumns.netResultRow} onChange={() => setVisibleColumns(prev => ({ ...prev, netResultRow: !prev.netResultRow }))} /> Résultat Net</label><label className="flex items-center gap-2 text-sm cursor-pointer"><input type="checkbox" checked={visibleColumns.cumulativeNetResultRow} onChange={() => setVisibleColumns(prev => ({ ...prev, cumulativeNetResultRow: !prev.cumulativeNetResultRow }))} /> Résultat Cumulé</label></div>
+          <div className="flex items-center gap-2"><span className="text-sm font-semibold text-gray-700 flex items-center gap-2"><Eye className="w-4 h-4"/>Lignes:</span><label className="flex items-center gap-2 text-sm cursor-pointer"><input type="checkbox" checked={visibleColumns.netResultRow} onChange={() => setVisibleColumns(prev => ({ ...prev, netResultRow: !prev.netResultRow }))} /> Variation de trésorerie</label><label className="flex items-center gap-2 text-sm cursor-pointer"><input type="checkbox" checked={visibleColumns.cumulativeNetResultRow} onChange={() => setVisibleColumns(prev => ({ ...prev, cumulativeNetResultRow: !prev.cumulativeNetResultRow }))} /> Résultat Cumulé</label></div>
         </div>
         <div className="flex items-center gap-4">
           <label htmlFor="search-supplier" className="relative text-gray-400 focus-within:text-gray-600 block">
@@ -656,7 +665,7 @@ const BudgetTracker = ({ activeProject, budgetEntries, actualTransactions }) => 
               <tr className="bg-white"><td colSpan={totalCols} className="py-2"></td></tr>
               {renderBudgetRows('sortie')}
               <tr className="bg-white"><td colSpan={totalCols} className="py-2"></td></tr>
-              {visibleColumns.netResultRow && (<tr className="bg-gray-300 border-t-2 border-gray-400"><td colSpan={isConsolidated ? 4 : 3} className="px-4 py-2 font-bold text-gray-900 bg-gray-300 sticky left-0 z-10">RÉSULTAT NET MENSUEL</td><td className="bg-white" style={{ width: `${separatorWidth}px` }}></td>{months.flatMap((_, monthIndex) => { const revenueTotals = calculateGeneralTotals(groupedData.entree || [], monthIndex, 'entree'); const expenseTotals = calculateGeneralTotals(groupedData.sortie || [], monthIndex, 'sortie'); const netBudget = revenueTotals.budget - expenseTotals.budget; const netActual = revenueTotals.actual - expenseTotals.actual; return [<td key={monthIndex} className="px-2 py-2">{numVisibleCols > 0 && <div className="flex gap-2 justify-around text-sm font-bold">{visibleColumns.budget && <div className="flex-1 text-center text-gray-900">{formatCurrency(netBudget, settings)}</div>}{visibleColumns.actual && <button onClick={() => netActual !== 0 && handleGeneralActualClick({ type: 'net', monthIndex, year: displayYear })} disabled={netActual === 0} className="flex-1 text-center text-gray-900 hover:underline disabled:cursor-not-allowed disabled:opacity-60">{formatCurrency(netActual, settings)}</button>}{visibleColumns.ecart && <div className={`flex-1 text-center ${getEcartColor(netActual - netBudget, true)}`}>{formatCurrency(netActual - netBudget, settings)}</div>}</div>}</td>, <td key={`${monthIndex}-sep`} className="bg-white" style={{ width: `${separatorWidth}px` }}></td>]; })}</tr>)}
+              {visibleColumns.netResultRow && (<tr className="bg-gray-300 border-t-2 border-gray-400"><td colSpan={isConsolidated ? 4 : 3} className="px-4 py-2 font-bold text-gray-900 bg-gray-300 sticky left-0 z-10">Variation de trésorerie</td><td className="bg-white" style={{ width: `${separatorWidth}px` }}></td>{months.flatMap((_, monthIndex) => { const revenueTotals = calculateGeneralTotals(groupedData.entree || [], monthIndex, 'entree'); const expenseTotals = calculateGeneralTotals(groupedData.sortie || [], monthIndex, 'sortie'); const netBudget = revenueTotals.budget - expenseTotals.budget; const netActual = revenueTotals.actual - expenseTotals.actual; return [<td key={monthIndex} className="px-2 py-2">{numVisibleCols > 0 && <div className="flex gap-2 justify-around text-sm font-bold">{visibleColumns.budget && <div className="flex-1 text-center text-gray-900">{formatCurrency(netBudget, settings)}</div>}{visibleColumns.actual && <button onClick={() => netActual !== 0 && handleGeneralActualClick({ type: 'net', monthIndex, year: displayYear })} disabled={netActual === 0} className="flex-1 text-center text-gray-900 hover:underline disabled:cursor-not-allowed disabled:opacity-60">{formatCurrency(netActual, settings)}</button>}{visibleColumns.ecart && <div className={`flex-1 text-center ${getEcartColor(netActual - netBudget, true)}`}>{formatCurrency(netActual - netBudget, settings)}</div>}</div>}</td>, <td key={`${monthIndex}-sep`} className="bg-white" style={{ width: `${separatorWidth}px` }}></td>]; })}</tr>)}
               {visibleColumns.netResultRow && visibleColumns.cumulativeNetResultRow && (<tr className="bg-white"><td colSpan={totalCols} className="py-1"></td></tr>)}
               {visibleColumns.cumulativeNetResultRow && (<tr className={`bg-gray-300 border-b-2 border-gray-400 ${!visibleColumns.netResultRow ? 'border-t-2' : ''}`}><td colSpan={isConsolidated ? 4 : 3} className="px-4 py-2 font-bold text-gray-900 bg-gray-300 sticky left-0 z-10">RÉSULTAT NET CUMULÉ</td><td className="bg-white" style={{ width: `${separatorWidth}px` }}></td>{months.flatMap((_, monthIndex) => { const cumulativeResult = calculateCumulativeResult(monthIndex); return [<td key={monthIndex} className="px-2 py-2">{numVisibleCols > 0 && <div className="flex gap-2 justify-around text-sm font-bold">{visibleColumns.budget && <div className="flex-1 text-center text-gray-900">{formatCurrency(cumulativeResult.budget, settings)}</div>}{visibleColumns.actual && <div className="flex-1 text-center text-gray-900">{formatCurrency(cumulativeResult.actual, settings)}</div>}{visibleColumns.ecart && <div className={`flex-1 text-center ${getEcartColor(cumulativeResult.ecart, true)}`}>{formatCurrency(cumulativeResult.ecart, settings)}</div>}</div>}</td>, <td key={`${monthIndex}-sep`} className="bg-white" style={{ width: `${separatorWidth}px` }}></td>]; })}</tr>)}
               <tr className="bg-white"><td colSpan={totalCols} className="py-1"></td></tr>
